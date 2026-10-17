@@ -1497,8 +1497,13 @@ function openMenu(anchor) {
   const m = $("moreMenu");
   const r = anchor.getBoundingClientRect();
   m.hidden = false;
-  m.style.left = `${Math.min(r.left, window.innerWidth - m.offsetWidth - 8)}px`;
-  m.style.top = `${r.bottom + 2}px`;
+  // Right-align with the button; open upwards when there is no room below
+  // (the button sits at the foot of the panel). Always stay inside the window.
+  const left = Math.max(8, Math.min(r.right - m.offsetWidth, window.innerWidth - m.offsetWidth - 8));
+  const below = r.bottom + 2 + m.offsetHeight <= window.innerHeight - 8;
+  const top = below ? r.bottom + 2 : Math.max(8, r.top - 2 - m.offsetHeight);
+  m.style.left = `${left}px`;
+  m.style.top = `${top}px`;
   setTimeout(() => document.addEventListener("click", closeMenu, { once: true }), 0);
 }
 function closeMenu() { $("moreMenu").hidden = true; }
