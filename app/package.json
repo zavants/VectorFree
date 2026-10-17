@@ -1,0 +1,13 @@
+{
+  "name": "vectorfree-app",
+  "private": true,
+  "version": "0.2.0",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build --no-bundle",
+    "icons": "tauri icon icon-source.svg -o src-tauri/icons"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  }
+}

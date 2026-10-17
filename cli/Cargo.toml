@@ -1,0 +1,12 @@
+[package]
+name = "vectorfree-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "vectorfree-cli"
+path = "src/main.rs"
+
+[dependencies]
+vectorfree-engine = { path = "../engine" }
