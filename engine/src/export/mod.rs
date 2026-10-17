@@ -35,6 +35,9 @@ pub struct ExportOptions {
     /// DXF: write curves as SPLINE entities (DXF 2000) instead of flattening
     /// them into polylines (DXF R12, readable by nearly everything).
     pub dxf_splines: bool,
+    /// DXF lines-only: curve flattening tolerance in pixels (smaller = more
+    /// lines, larger file).
+    pub dxf_flatten: f64,
 }
 
 impl Default for ExportOptions {
@@ -46,6 +49,7 @@ impl Default for ExportOptions {
             group_by_color: true,
             raster_scale: 1.0,
             dxf_splines: false,
+            dxf_flatten: 0.25,
         }
     }
 }
@@ -192,7 +196,7 @@ pub fn export_bytes(img: &VectorImage, fmt: Format, opt: &ExportOptions) -> Resu
         Format::Ai => ps::write_ai(img, &items, opt).into_bytes(),
         Format::Pdf => pdf::write(img, &items, opt),
         Format::Dxf if opt.dxf_splines => dxf::write_r2000(img, &items).into_bytes(),
-        Format::Dxf => dxf::write(img, &items).into_bytes(),
+        Format::Dxf => dxf::write(img, &items, opt.dxf_flatten.clamp(0.02, 10.0)).into_bytes(),
         Format::Png | Format::Gif | Format::Jpg | Format::Bmp | Format::Tif => raster::write(img, &items, opt, fmt)?,
     })
 }

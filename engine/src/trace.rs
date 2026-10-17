@@ -78,7 +78,8 @@ impl<'a> Grid<'a> {
         let lab = seg
             .labels
             .iter()
-            .map(|&l| if seg.palette[l as usize].transparent { OUTSIDE } else { l })
+            .enumerate()
+            .map(|(i, &l)| if seg.palette[l as usize].transparent || seg.is_hidden(i) { OUTSIDE } else { l })
             .collect();
         Grid { w: seg.width as i32, h: seg.height as i32, lab, _seg: seg }
     }

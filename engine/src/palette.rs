@@ -340,16 +340,16 @@ pub fn choose_palette(img: &image::RgbaImage, kind: ImageKind, quality: Quality,
     }
 }
 
-/// Palettes with 2..=12 colors for the user to pick from, plus the index of
+/// Palettes with 2..=max_k colors for the user to pick from, plus the index of
 /// the one automatic mode would choose (by color count).
-pub fn suggested_palettes(img: &image::RgbaImage, kind: ImageKind, quality: Quality) -> (Vec<Vec<[u8; 3]>>, usize) {
+pub fn suggested_palettes(img: &image::RgbaImage, kind: ImageKind, quality: Quality, max_k: usize) -> (Vec<Vec<[u8; 3]>>, usize) {
     let bins = working_bins(img);
     if bins.is_empty() {
         return (vec![vec![[255, 255, 255]]], 0);
     }
     let kind = if kind == ImageKind::Photo { ImageKind::ArtBlended } else { kind };
     let mut out: Vec<Vec<[u8; 3]>> = Vec::new();
-    for k in 2..=12usize.min(bins.len().max(2)) {
+    for k in 2..=max_k.clamp(2, 64).min(bins.len().max(2)) {
         let km = kmeans(&bins, k);
         let mut cols = cluster_colors(&bins, &km, kind);
         cols.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());

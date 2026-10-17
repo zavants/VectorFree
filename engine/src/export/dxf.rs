@@ -62,7 +62,7 @@ fn pair(s: &mut String, code: i32, v: impl std::fmt::Display) {
     let _ = write!(s, "{code}\r\n{v}\r\n");
 }
 
-pub fn write(img: &VectorImage, items: &[Item]) -> String {
+pub fn write(img: &VectorImage, items: &[Item], flatten: f64) -> String {
     let table: Vec<(u8, Lab)> = aci_table().into_iter().map(|(i, c)| (i, rgb_to_lab(c))).collect();
     let h = img.height as f64;
     let mut layers: Vec<([u8; 3], u8)> = Vec::new();
@@ -107,7 +107,7 @@ pub fn write(img: &VectorImage, items: &[Item]) -> String {
     for it in items {
         let layer = lname(it.rgb);
         for p in &it.paths {
-            let pts = p.flatten(0.25);
+            let pts = p.flatten(flatten);
             if pts.len() < 2 {
                 continue;
             }

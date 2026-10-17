@@ -7,272 +7,115 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <svg viewBox="0 0 1024 1024" class="logo" aria-hidden="true"><rect x="64" y="64" width="896" height="896" rx="200" fill="#1d2a6b"/><path d="M232 300 L392 300 L512 620 L632 300 L792 300 L580 780 L444 780 Z" fill="#ffb21a"/></svg>
-      <span>Vector Free</span>
-    </div>
-    <div class="file-name" id="fileName">No image</div>
-    <div class="actions">
-      <button id="btnOpen" title="Open image (Ctrl+O)">Open</button>
-      <button id="btnPaste" title="Paste an image from the clipboard (Ctrl+V)">Paste</button>
-      <button id="btnCrop" disabled title="Crop the source image (C)">Crop</button>
-      <button id="btnBatch" title="Process many images at once">Batch</button>
-      <button id="btnHelp" title="Help and preferences (F1)">Help</button>
-      <button id="btnExport" class="primary" disabled title="Export (Ctrl+S)">Export</button>
-    </div>
-  </header>
+  <main class="app">
+    <!-- ================= image viewer ================= -->
+    <section class="viewer" id="viewer">
+      <div class="panes" id="panes">
+        <div class="pane" data-pane="original"><div class="pane-label">Bitmap</div><div class="viewport"><div class="stage"></div></div></div>
+        <div class="pane" data-pane="result"><div class="pane-label">Vector</div><div class="viewport"><div class="stage"></div></div></div>
+        <div class="pane" data-pane="segments"><div class="pane-label">Segments</div><div class="viewport"><div class="stage"></div></div></div>
+      </div>
 
-  <main class="layout">
-    <aside class="sidebar">
-      <section class="step">
-        <h2><span class="num">1</span>Image type</h2>
-        <div class="choices" id="kindChoices">
-          <label class="choice"><input type="radio" name="kind" value="photo">
-            <span><b>Photograph</b><small>Taken with a camera, or detailed art with gradients</small></span></label>
-          <label class="choice"><input type="radio" name="kind" value="art_blended" checked>
-            <span><b>Artwork with blended edges</b><small>Anti-aliased logos, drawings and scans</small></span></label>
-          <label class="choice"><input type="radio" name="kind" value="art_flat">
-            <span><b>Artwork without blending</b><small>Pixel-exact; color changes abruptly at edges</small></span></label>
-        </div>
-        <p class="hint" id="kindHint"></p>
-      </section>
+      <div class="drop" id="drop">
+        <svg viewBox="0 0 120 100" class="drop-icon" aria-hidden="true">
+          <path d="M20 10 L20 62 L33 50 L42 70 L50 66 L41 47 L58 47 Z" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/>
+          <rect x="62" y="52" width="38" height="34" rx="3" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="6 4"/>
+          <path d="M81 60 V78 M72 69 H90" stroke="currentColor" stroke-width="4"/>
+        </svg>
+        <p id="dropText">Drag and drop<br>your image here</p>
+      </div>
 
-      <section class="step">
-        <h2><span class="num">2</span><span id="qualityTitle">Quality</span></h2>
-        <div class="segmented" id="qualityChoices">
-          <label><input type="radio" name="quality" value="low"><span>Low</span></label>
-          <label><input type="radio" name="quality" value="medium" checked><span>Medium</span></label>
-          <label><input type="radio" name="quality" value="high"><span>High</span></label>
+      <!-- navigation pad + zoom (top left) -->
+      <div class="float nav-float" id="navFloat" hidden>
+        <div class="navpad">
+          <button data-pan="up" title="Pan up">∧</button>
+          <button data-act="fit" title="Fit to window (0)" class="sq">⤢</button>
+          <button data-pan="left" title="Pan left">&lt;</button>
+          <button data-act="center" title="Actual size (1)">1:1</button>
+          <button data-pan="right" title="Pan right">&gt;</button>
+          <span></span>
+          <button data-pan="down" title="Pan down">∨</button>
         </div>
-        <p class="hint" id="qualityHint"></p>
-      </section>
+        <input type="range" id="zoomSlider" class="vslider" min="-4" max="5" step="0.05" value="0" title="Zoom" orient="vertical">
+      </div>
 
-      <section class="step">
-        <h2><span class="num">3</span>Colors</h2>
-        <div class="segmented" id="colorModeChoices">
-          <label><input type="radio" name="colorMode" value="auto" checked><span>Automatic</span></label>
-          <label><input type="radio" name="colorMode" value="count"><span>Count</span></label>
-          <label><input type="radio" name="colorMode" value="suggested"><span>Suggested</span></label>
-        </div>
-        <div class="row count-row" id="countRow" hidden>
-          <input type="range" id="numColors" min="2" max="64" value="6">
-          <output id="numColorsOut">6</output>
-        </div>
-        <ul class="suggested" id="suggested" hidden></ul>
-        <label class="check"><input type="checkbox" id="removeBg"> Remove background (make the border color transparent)</label>
+      <!-- view switch (left) -->
+      <div class="float view-float" id="viewFloat" hidden>
+        <button data-view="original" title="Show the original bitmap (B)">Bitmap (B)</button>
+        <button data-view="segments" title="Show the segmentation (S)">Segments (S)</button>
+        <button data-view="result" title="Show the vector result (V)">Vector (V)</button>
+        <label class="mini-check" title="Outline the vector paths and show their nodes (P)"><input type="checkbox" id="pathsCheck"> Paths</label>
+        <label class="mini-check" title="Show bitmap and vector side by side"><input type="checkbox" id="splitCheck"> Split</label>
+      </div>
 
-        <details class="advanced" id="advanced">
-          <summary>Advanced settings</summary>
-          <div class="adv-grid">
-            <label>Curves
-              <select id="advCurves"><option value="curves">Curves + lines</option><option value="lines">Lines only (polygons)</option></select>
-            </label>
-            <label>Accuracy <output id="advTolOut">auto</output>
-              <input type="range" id="advTol" min="0.05" max="3" step="0.05" value="0.45" data-auto="1"></label>
-            <label>Smoothing <output id="advSmoothOut">auto</output>
-              <input type="range" id="advSmooth" min="0" max="4" step="0.25" value="1" data-auto="1"></label>
-            <label>Corner angle <output id="advCornerOut">auto</output>
-              <input type="range" id="advCorner" min="60" max="175" step="5" value="120" data-auto="1"></label>
-            <label>Min. region size <output id="advAreaOut">auto</output>
-              <input type="range" id="advArea" min="1" max="400" step="1" value="8" data-auto="1"></label>
-            <label>Denoise
-              <select id="advDenoise"><option value="">Auto</option><option value="on">On</option><option value="off">Off</option></select>
-            </label>
-          </div>
-          <button type="button" id="advReset" class="link">Reset to automatic</button>
-        </details>
-        <button id="btnProcess" class="primary wide" disabled>Vectorize</button>
-      </section>
+      <!-- edit tools (right of the image) -->
+      <div class="float tools-float" id="toolsFloat" hidden>
+        <button data-cmd="undo" title="Undo (Z)">↶ Undo (Z)</button>
+        <button data-cmd="redo" title="Redo (Y)">↷ Redo (Y)</button>
+        <button data-cmd="revert" title="Revert all edits (T)">⟲ Revert (T)</button>
+        <hr>
+        <div id="toolButtons"></div>
+        <div class="brush-row" id="brushRow">
+          <span>Size</span><input type="range" id="brush" min="0.5" max="20" step="0.5" value="2"><output id="brushOut">2</output>
+        </div>
+        <div class="tool-swatch" id="toolSwatch" title="Current color (pick it with Color (C) or in the palette)"></div>
+      </div>
 
-      <section class="step" id="paletteSection" hidden>
-        <h2><span class="num">4</span>Palette</h2>
-        <p class="hint">Click a swatch to select it for the pencil and fill tools.</p>
-        <ul class="palette" id="palette"></ul>
-        <div class="row">
-          <button id="btnAddColor" title="Pick a color from the original image (I)">+ Eyedropper</button>
-          <button id="btnApplyPalette" disabled title="Re-segment the image with the edited palette">Apply palette</button>
-        </div>
-      </section>
+      <div class="crop-bar" id="cropBar" hidden>
+        Drag a rectangle over the image. <button id="cropApply" class="primary" disabled>Crop</button> <button id="cropCancel">Cancel</button>
+      </div>
+    </section>
 
-      <section class="step" id="editSection" hidden>
-        <h2><span class="num">5</span>Edit result</h2>
-        <div class="tools" id="toolChoices">
-          <label title="Pan (H or hold Space)"><input type="radio" name="tool" value="pan" checked><span>Pan</span></label>
-          <label title="Pencil: paint with the selected color (B)"><input type="radio" name="tool" value="pencil"><span>Pencil</span></label>
-          <label title="Fill: recolor a whole region (F)"><input type="radio" name="tool" value="fill"><span>Fill</span></label>
-          <label title="Zap: drag to dissolve pixels into their surroundings; click to dissolve a whole region (Z)"><input type="radio" name="tool" value="zap"><span>Zap</span></label>
-          <label title="Eyedropper: add a color from the original (I)"><input type="radio" name="tool" value="picker"><span>Pick</span></label>
-        </div>
-        <div class="row">
-          <span class="lbl">Brush</span>
-          <input type="range" id="brush" min="0.5" max="20" step="0.5" value="2">
-          <output id="brushOut">2</output>
-        </div>
-        <div class="row">
-          <button id="btnUndo" disabled title="Undo (Ctrl+Z)">Undo</button>
-          <button id="btnRedo" disabled title="Redo (Ctrl+Y)">Redo</button>
-          <button id="btnReset" title="Discard all edits">Reset</button>
-        </div>
-        <div class="row">
-          <label class="check inline"><input type="checkbox" id="autoUpdate" checked> Auto-update</label>
-          <button id="btnUpdate" class="primary" title="Recompute the vectors after editing (U)">Update vectors</button>
-        </div>
-        <div class="finder">
-          <button id="btnFind" title="Highlight pinch points: places where a region connects only diagonally">Find problems</button>
-          <span id="findCount" class="muted"></span>
-          <button id="findPrev" class="mini-btn" disabled title="Previous (Shift+N)">‹</button>
-          <button id="findNext" class="mini-btn" disabled title="Next (N)">›</button>
-        </div>
-      </section>
+    <!-- ================= contextual help ================= -->
+    <aside class="helppane" id="helpPane" hidden>
+      <div class="help-bar">
+        <button id="helpBack" title="Previous help topic">◀ Back</button>
+        <button id="helpFwd" title="Next help topic">Next ▶</button>
+        <button id="helpContents" title="All help topics">☰ Contents</button>
+        <span class="spacer"></span>
+        <button id="helpClose" class="close" title="Close help">✕</button>
+      </div>
+      <article class="help-body" id="helpBody"></article>
     </aside>
 
-    <section class="workspace">
-      <div class="viewbar">
-        <div class="segmented small" id="viewChoices">
-          <label><input type="radio" name="view" value="compare" checked><span>Compare</span></label>
-          <label><input type="radio" name="view" value="overlay"><span>Overlay</span></label>
-          <label><input type="radio" name="view" value="result"><span>Result</span></label>
-          <label><input type="radio" name="view" value="outlines"><span>Outlines</span></label>
-          <label><input type="radio" name="view" value="segments"><span>Segmentation</span></label>
-          <label><input type="radio" name="view" value="original"><span>Original</span></label>
-        </div>
-        <div class="row tight" id="overlayRow" hidden>
-          <span class="lbl">Vector opacity</span>
-          <input type="range" id="overlayOpacity" min="0" max="1" step="0.05" value="0.6">
-        </div>
-        <div class="zoom">
-          <button id="zoomOut" title="Zoom out (-)">−</button>
-          <span id="zoomLabel">100%</span>
-          <button id="zoomIn" title="Zoom in (+)">+</button>
-          <button id="zoomFit" title="Fit (0)">Fit</button>
-        </div>
-      </div>
-      <div class="panes" id="panes">
-        <div class="pane" data-pane="original"><div class="pane-label">Original</div><div class="viewport"><div class="stage"></div></div></div>
-        <div class="pane" data-pane="result"><div class="pane-label" id="resultLabel">Vector</div><div class="viewport"><div class="stage"></div></div></div>
-        <div class="pane" data-pane="segments"><div class="pane-label">Segmentation</div><div class="viewport"><div class="stage"></div></div></div>
-        <div class="drop" id="drop">
-          <div>
-            <p class="big">Drop an image here</p>
-            <p>or click <b>Open</b>, or paste with <b>Ctrl+V</b>. PNG, JPG, GIF, BMP, TIFF, WebP or ICO.</p>
-            <p class="muted">Dropping several images opens batch processing.</p>
-          </div>
-        </div>
-        <div class="crop-bar" id="cropBar" hidden>
-          Drag a rectangle on the image. <button id="cropApply" class="primary" disabled>Crop</button> <button id="cropCancel">Cancel</button>
-        </div>
-      </div>
-      <footer class="status" id="status">Ready.</footer>
-    </section>
+    <!-- ================= wizard panel ================= -->
+    <aside class="wizard">
+      <header class="wiz-head">
+        <h1 id="pageTitle">Load Image</h1>
+        <button id="helpBtn" class="help-btn" title="Show help for this page (F1)"><span class="q">?</span> Help</button>
+      </header>
+      <div class="wiz-body" id="wizBody"></div>
+      <nav class="wiz-nav">
+        <button id="navStart" class="navbtn"><span class="ico">⏮</span><span id="navStartLabel">Reset</span></button>
+        <button id="navBack" class="navbtn"><span class="ico">◀</span>Back</button>
+        <button id="navNext" class="navbtn next"><span class="ico">▶</span>Next</button>
+      </nav>
+    </aside>
   </main>
+
+  <footer class="status">
+    <span id="statusInfo"></span>
+    <span id="statusMsg" class="msg"></span>
+    <span class="spacer"></span>
+    <span id="zoomLabel">100%</span>
+    <span class="ver">Vector Free v0.3.0</span>
+  </footer>
 
   <div class="busy" id="busy" hidden><div class="spinner"></div><span id="busyText">Working…</span></div>
 
-  <dialog id="exportDlg">
-    <form method="dialog">
-      <h3>Export</h3>
-      <label class="field">Format
-        <select id="expFormat">
-          <option value="svg">SVG — web, Inkscape, Illustrator</option>
-          <option value="pdf">PDF</option>
-          <option value="eps">EPS — Encapsulated PostScript</option>
-          <option value="ai">AI — Adobe Illustrator 3</option>
-          <option value="dxf">DXF — CAD, cutting, CNC</option>
-          <option value="png">PNG (bitmap)</option>
-          <option value="gif">GIF (bitmap)</option>
-          <option value="jpg">JPG (bitmap)</option>
-          <option value="bmp">BMP (bitmap)</option>
-          <option value="tif">TIFF (bitmap)</option>
-        </select>
-      </label>
-      <fieldset>
-        <legend>Shape layout</legend>
-        <label class="check"><input type="radio" name="layout" value="cutout" checked> Cutout (no overlaps)</label>
-        <label class="check"><input type="radio" name="layout" value="stacked"> Stacked (solid shapes on top of each other)</label>
-      </fieldset>
-      <fieldset>
-        <legend>Rendering</legend>
-        <label class="check"><input type="radio" name="render" value="fill" checked> Fill only — printing, cutting, engraving, embroidery</label>
-        <label class="check"><input type="radio" name="render" value="stroke"> Stroke + fill — on-screen use (hides hairline gaps)
-          <input type="number" id="expStrokeW" min="0.1" max="10" step="0.1" value="0.5" class="mini"> pt</label>
-      </fieldset>
-      <label class="check"><input type="checkbox" id="expGroup" checked> Group by color (one path per color)</label>
-      <fieldset id="dxfRow" hidden>
-        <legend>DXF curves</legend>
-        <label class="check"><input type="radio" name="dxfMode" value="lines" checked> Lines only (DXF R12 — opens almost everywhere)</label>
-        <label class="check"><input type="radio" name="dxfMode" value="splines"> Lines + splines (DXF 2000)</label>
-      </fieldset>
-      <label class="field" id="expScaleRow">Bitmap scale
-        <input type="number" id="expScale" min="0.1" max="16" step="0.5" value="2"></label>
-      <menu>
-        <button type="button" id="expCopy" title="Copy the SVG markup to the clipboard">Copy SVG</button>
-        <span class="spacer"></span>
-        <button value="cancel">Cancel</button>
-        <button id="expGo" value="default" class="primary">Save as…</button>
-      </menu>
-    </form>
-  </dialog>
+  <!-- More Options menu -->
+  <div class="menu" id="moreMenu" hidden>
+    <button data-menu="about">About Vector Free</button>
+    <button data-menu="shortcuts">Keyboard Shortcuts</button>
+    <button data-menu="restore">Restore Default Settings</button>
+  </div>
 
-  <dialog id="batchDlg">
+  <dialog id="aboutDlg">
     <form method="dialog">
-      <h3>Batch processing</h3>
-      <p class="hint">Uses the current settings and export options.</p>
-      <div class="row">
-        <button type="button" id="batchPick">Choose images…</button>
-        <span id="batchCount" class="muted">0 images</span>
-      </div>
-      <div class="row">
-        <button type="button" id="batchFolder">Output folder…</button>
-        <span id="batchOut" class="muted ellipsis">—</span>
-      </div>
-      <label class="check"><input type="checkbox" id="batchAuto" checked> Detect the image type of each image automatically</label>
-      <fieldset>
-        <legend>Formats</legend>
-        <div class="formats" id="batchFormats">
-          <label><input type="checkbox" value="svg" checked> SVG</label>
-          <label><input type="checkbox" value="pdf"> PDF</label>
-          <label><input type="checkbox" value="eps"> EPS</label>
-          <label><input type="checkbox" value="ai"> AI</label>
-          <label><input type="checkbox" value="dxf"> DXF</label>
-          <label><input type="checkbox" value="png"> PNG</label>
-        </div>
-      </fieldset>
-      <progress id="batchProgress" value="0" max="1"></progress>
-      <ol class="log" id="batchLog"></ol>
-      <menu>
-        <button type="button" id="batchCancel" disabled>Stop</button>
-        <span class="spacer"></span>
-        <button value="cancel">Close</button>
-        <button type="button" id="batchGo" class="primary" disabled>Start</button>
-      </menu>
-    </form>
-  </dialog>
-
-  <dialog id="helpDlg">
-    <form method="dialog">
-      <h3>Vector Free</h3>
-      <p class="hint">Turns bitmaps (PNG, JPG…) into scalable vector art.</p>
-      <h4>Workflow</h4>
-      <ol class="help">
-        <li><b>Open</b>, drop or paste an image. With fully automatic mode it is vectorized right away.</li>
-        <li>Check the <b>image type</b>: zoom in on an edge — if colors blend smoothly it is <i>blended</i>.</li>
-        <li><b>Quality</b> describes the source (artwork) or the level of detail you want (photos).</li>
-        <li>Use <b>Suggested</b> palettes or the eyedropper for logos with 12 or fewer colors.</li>
-        <li>Compare with <b>Overlay</b>/<b>Outlines</b>, fix mistakes with <b>Pencil</b>, <b>Fill</b> and <b>Zap</b>, then <b>Export</b>.</li>
-      </ol>
-      <h4>Shortcuts</h4>
-      <table class="keys">
-        <tr><td>Ctrl+O / Ctrl+V / Ctrl+S</td><td>Open / paste / export</td></tr>
-        <tr><td>Ctrl+Z / Ctrl+Y</td><td>Undo / redo</td></tr>
-        <tr><td>H, B, F, Z, I, C</td><td>Pan, pencil, fill, zap, eyedropper, crop</td></tr>
-        <tr><td>Space (hold)</td><td>Pan temporarily</td></tr>
-        <tr><td>U</td><td>Update vectors</td></tr>
-        <tr><td>N / Shift+N</td><td>Next / previous problem</td></tr>
-        <tr><td>+ / − / 0</td><td>Zoom in / out / fit</td></tr>
-      </table>
-      <h4>Preferences</h4>
-      <label class="check"><input type="checkbox" id="prefAuto" checked> Fully automatic: vectorize images as soon as they are opened</label>
+      <h3>Vector Free 0.3.0</h3>
+      <p>Open-source bitmap to vector tracer. Engine in Rust, interface in Tauri.</p>
+      <p class="muted">The tracing approach is inspired by published research on vectorizing anti-aliased images (J. Diebel, <i>Bayesian Image Vectorization</i>, Stanford, 2008). Vector Free is not affiliated with any other product.</p>
+      <p class="muted">License: MIT or Apache-2.0.</p>
       <menu><button value="close" class="primary">Close</button></menu>
     </form>
   </dialog>

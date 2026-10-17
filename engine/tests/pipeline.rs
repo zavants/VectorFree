@@ -300,3 +300,47 @@ fn image_type_is_detected() {
     });
     assert_eq!(suggest_kind(&soft).0, ImageKind::ArtBlended);
 }
+#[test]
+fn background_eraser_hides_and_restores_one_shape() {
+    let img = picture();
+    let s = Settings::default();
+    let mut seg = segment_image(&img, &s);
+    let k = seg.scale;
+    let before = vectorize(&seg, &s).shapes.len();
+    // Hide the square: its color disappears from the output, others stay.
+    assert!(seg.toggle_hidden(90 * k, 35 * k, false));
+    let hidden = vectorize(&seg, &s);
+    assert_eq!(hidden.shapes.len(), before - 1);
+    let outlines = engine::hidden_outlines(&seg, &s).expect("outlines of the hidden shape");
+    assert_eq!(outlines.shapes.len(), 1);
+    // Clicking again restores it.
+    assert!(!seg.toggle_hidden(90 * k, 35 * k, false));
+    assert_eq!(vectorize(&seg, &s).shapes.len(), before);
+    assert!(engine::hidden_outlines(&seg, &s).is_none());
+}
+
+#[test]
+fn corner_detection_can_be_switched_off() {
+    let img = image::RgbaImage::from_fn(60, 60, |x, y| {
+        if (15..45).contains(&x) && (15..45).contains(&y) { image::Rgba([0, 0, 0, 255]) } else { image::Rgba([255, 255, 255, 255]) }
+    });
+    let mut s = Settings { kind: ImageKind::ArtFlat, ..Settings::default() };
+    let with = vectorize(&segment_image(&img, &s), &s);
+    let curves = |v: &engine::VectorImage| v.shapes.iter().flat_map(|sh| sh.outers.iter()).flat_map(|p| p.segs.iter()).filter(|g| matches!(g, engine::Seg::Cubic(..))).count();
+    assert_eq!(curves(&with), 0, "with corners the square is four straight sides");
+    s.advanced.detect_corners = Some(false);
+    let without = vectorize(&segment_image(&img, &s), &s);
+    assert!(curves(&without) > 0, "without corner detection the corners become curves");
+}
+
+#[test]
+fn dxf_line_density_follows_option() {
+    let img = picture();
+    let s = Settings::default();
+    let vec = vectorize(&segment_image(&img, &s), &s);
+    let count = |flatten: f64| {
+        let o = ExportOptions { dxf_flatten: flatten, ..ExportOptions::default() };
+        String::from_utf8(export_bytes(&vec, Format::Dxf, &o).unwrap()).unwrap().matches("VERTEX").count()
+    };
+    assert!(count(1.0) < count(0.1), "fewer lines must give fewer vertices");
+}

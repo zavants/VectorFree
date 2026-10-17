@@ -41,6 +41,9 @@ pub struct Segmentation {
     pub scale: u32,
     /// Source image (original resolution) for sub-pixel edge recovery.
     pub source: Option<std::sync::Arc<image::RgbaImage>>,
+    /// Pixels whose shapes were removed with the background eraser (empty =
+    /// none). Labels stay intact so a click can restore the shape.
+    pub hidden: Vec<bool>,
 }
 
 /// If `c` looks like an anti-aliasing blend of two palette colors, return the
@@ -125,7 +128,7 @@ impl Segmentation {
                 })
             })
             .collect();
-        Segmentation { width: img.width(), height: img.height(), labels, palette: entries, scale: 1, source: None }
+        Segmentation { width: img.width(), height: img.height(), labels, palette: entries, scale: 1, source: None, hidden: Vec::new() }
     }
 
     #[inline]
@@ -465,6 +468,38 @@ impl Segmentation {
         self.dissolve(&px);
     }
 
+    #[inline]
+    pub fn is_hidden(&self, i: usize) -> bool {
+        self.hidden.get(i).copied().unwrap_or(false)
+    }
+
+    /// Background eraser: hide the shape under (x, y), or restore it when it is
+    /// already hidden. With `whole_color`, every shape of that color toggles.
+    /// Returns true when shapes were hidden, false when restored.
+    pub fn toggle_hidden(&mut self, x: u32, y: u32, whole_color: bool) -> bool {
+        if x >= self.width || y >= self.height {
+            return false;
+        }
+        if self.hidden.is_empty() {
+            self.hidden = vec![false; self.labels.len()];
+        }
+        let start = (y * self.width + x) as usize;
+        let hide = !self.hidden[start];
+        if whole_color {
+            let l = self.labels[start];
+            for i in 0..self.labels.len() {
+                if self.labels[i] == l {
+                    self.hidden[i] = hide;
+                }
+            }
+        } else {
+            for i in self.region_at(x, y) {
+                self.hidden[i] = hide;
+            }
+        }
+        hide
+    }
+
     /// Bucket fill: give the region containing (x, y) the color `label`.
     pub fn fill(&mut self, x: u32, y: u32, label: u16) {
         if x >= self.width || y >= self.height || label as usize >= self.palette.len() {
@@ -507,9 +542,11 @@ impl Segmentation {
     /// Render the label map as an RGBA image (transparent entries -> alpha 0).
     pub fn to_rgba(&self) -> image::RgbaImage {
         let mut img = image::RgbaImage::new(self.width, self.height);
-        for (px, &l) in img.pixels_mut().zip(&self.labels) {
+        for (i, (px, &l)) in img.pixels_mut().zip(&self.labels).enumerate() {
             let e = &self.palette[l as usize];
-            *px = image::Rgba([e.rgb[0], e.rgb[1], e.rgb[2], if e.transparent { 0 } else { e.alpha }]);
+            // Erased shapes show faintly so they can be found and restored.
+            let a = if e.transparent { 0 } else if self.is_hidden(i) { 60 } else { e.alpha };
+            *px = image::Rgba([e.rgb[0], e.rgb[1], e.rgb[2], a]);
         }
         img
     }

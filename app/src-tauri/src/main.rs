@@ -19,6 +19,8 @@ const HISTORY_BYTES: usize = 256 << 20;
 /// The image currently being worked on.
 struct Doc {
     img: image::RgbaImage,
+    /// File the image came from (None when pasted); used by Quick Save.
+    path: Option<PathBuf>,
     settings: Settings,
     seg: Option<Segmentation>,
     /// Segmentation as produced by the last automatic run ("Reset edits").
@@ -58,6 +60,7 @@ type Res<T> = Result<T, String>;
 #[derive(Serialize)]
 struct ImageInfo {
     name: String,
+    path: Option<String>,
     width: u32,
     height: u32,
     png: String,
@@ -84,6 +87,8 @@ struct View {
     nodes: usize,
     can_undo: bool,
     can_redo: bool,
+    /// Outlines of shapes removed with the background eraser (SVG), if any.
+    erased_svg: Option<String>,
 }
 
 /// Result of an edit: always the new segmentation preview, plus the vectors
@@ -144,6 +149,7 @@ fn build_view(doc: &Doc) -> Res<View> {
         .collect();
     let paths = vec.shapes.iter().map(|s| s.outers.len() + s.holes.len()).sum();
     let nodes = vec.shapes.iter().flat_map(|s| s.outers.iter().chain(&s.holes)).map(|p| p.segs.len()).sum();
+    let erased_svg = engine::hidden_outlines(seg, &doc.settings).map(|v| engine::export::to_svg(&v, &ExportOptions::default()));
     Ok(View {
         palette,
         seg_png: seg_preview(seg)?,
@@ -153,6 +159,7 @@ fn build_view(doc: &Doc) -> Res<View> {
         nodes,
         can_undo: !doc.undo.is_empty(),
         can_redo: !doc.redo.is_empty(),
+        erased_svg,
     })
 }
 
@@ -187,15 +194,16 @@ fn edit_result(doc: &mut Doc, revectorize: bool) -> Res<EditResult> {
     })
 }
 
-fn image_info(name: String, img: &image::RgbaImage) -> Res<ImageInfo> {
+fn image_info(name: String, path: Option<&PathBuf>, img: &image::RgbaImage) -> Res<ImageInfo> {
     let (kind, n) = engine::palette::suggest_kind(img);
-    Ok(ImageInfo { name, width: img.width(), height: img.height(), png: encode_png(img)?, suggested_kind: kind, exact_colors: n })
+    Ok(ImageInfo { name, path: path.map(|p| p.display().to_string()), width: img.width(), height: img.height(), png: encode_png(img)?, suggested_kind: kind, exact_colors: n })
 }
 
-fn set_image(state: &State<AppState>, name: String, img: image::RgbaImage) -> Res<ImageInfo> {
-    let info = image_info(name, &img)?;
+fn set_image(state: &State<AppState>, name: String, path: Option<PathBuf>, img: image::RgbaImage) -> Res<ImageInfo> {
+    let info = image_info(name, path.as_ref(), &img)?;
     *state.doc.lock().map_err(|_| "state poisoned")? = Some(Doc {
         img,
+        path,
         settings: Settings::default(),
         seg: None,
         pristine: None,
@@ -211,7 +219,7 @@ fn open_image(state: State<AppState>, path: String) -> Res<ImageInfo> {
     let p = PathBuf::from(&path);
     let img = engine::load_image(&p)?;
     let name = p.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-    set_image(&state, name, img)
+    set_image(&state, name, Some(p), img)
 }
 
 /// Image bytes pasted from the clipboard (raw request body).
@@ -221,7 +229,7 @@ fn open_image_bytes(state: State<AppState>, request: tauri::ipc::Request<'_>) ->
         return Err("Expected raw image bytes".into());
     };
     let img = engine::load_image_bytes(bytes)?;
-    set_image(&state, "pasted image.png".into(), img)
+    set_image(&state, "pasted image.png".into(), None, img)
 }
 
 /// File passed on the command line (e.g. an image dropped onto the .exe).
@@ -239,7 +247,7 @@ fn crop(state: State<AppState>, x: u32, y: u32, width: u32, height: u32) -> Res<
     let (x, y) = (x.min(w.saturating_sub(1)), y.min(h.saturating_sub(1)));
     let (cw, ch) = (width.min(w - x).max(1), height.min(h - y).max(1));
     let cropped = image::imageops::crop_imm(&doc.img, x, y, cw, ch).to_image();
-    let info = image_info(String::new(), &cropped)?;
+    let info = image_info(String::new(), doc.path.as_ref(), &cropped)?;
     doc.img = cropped;
     doc.seg = None;
     doc.pristine = None;
@@ -270,9 +278,9 @@ struct Suggestions {
 }
 
 #[tauri::command(async)]
-fn suggested_palettes(state: State<AppState>, settings: Settings) -> Res<Suggestions> {
+fn suggested_palettes(state: State<AppState>, settings: Settings, max_colors: Option<usize>) -> Res<Suggestions> {
     with_doc(&state, |doc| {
-        let (pals, idx) = engine::palette::suggested_palettes(&doc.img, settings.kind, settings.quality);
+        let (pals, idx) = engine::palette::suggested_palettes(&doc.img, settings.kind, settings.quality, max_colors.unwrap_or(12));
         Ok(Suggestions { palettes: pals.iter().map(|p| p.iter().map(|&c| hex(c)).collect()).collect(), auto_index: idx })
     })
 }
@@ -346,6 +354,20 @@ fn merge_colors(state: State<AppState>, from: u16, into: u16) -> Res<View> {
     })
 }
 
+/// Palette index of the segment at (x, y) in source pixels (the Color tool).
+#[tauri::command(async)]
+fn label_at(state: State<AppState>, x: f64, y: f64) -> Res<u16> {
+    with_doc(&state, |doc| {
+        let seg = doc.seg.as_ref().ok_or("No segmentation yet")?;
+        let s = seg.scale as f64;
+        let (xi, yi) = ((x * s).floor().max(0.0) as u32, (y * s).floor().max(0.0) as u32);
+        if xi >= seg.width || yi >= seg.height {
+            return Err("Outside the image".into());
+        }
+        Ok(seg.at(xi, yi))
+    })
+}
+
 /// Color of the source image at (x, y) in original pixel coordinates.
 #[tauri::command(async)]
 fn pick_color(state: State<AppState>, x: f64, y: f64) -> Res<String> {
@@ -370,6 +392,8 @@ enum EditOp {
     ZapRegion { x: f64, y: f64 },
     /// Recolor a whole region.
     Fill { x: f64, y: f64, label: u16 },
+    /// Background eraser: hide or restore the shape (or color) under the point.
+    Erase { x: f64, y: f64, whole_color: bool },
 }
 
 /// Segmentation edit in source pixel coordinates.
@@ -405,6 +429,10 @@ fn edit(state: State<AppState>, op: EditOp, revectorize: bool) -> Res<EditResult
             EditOp::Fill { x, y, label } => {
                 let (cx, cy) = cell(x, y);
                 seg.fill(cx, cy, label);
+            }
+            EditOp::Erase { x, y, whole_color } => {
+                let (cx, cy) = cell(x, y);
+                seg.toggle_hidden(cx, cy, whole_color);
             }
         }
         edit_result(doc, revectorize)
@@ -449,6 +477,16 @@ fn update(state: State<AppState>) -> Res<View> {
     with_doc(&state, refresh)
 }
 
+/// Re-fit the vectors with new smoothing/node settings, keeping the current
+/// segmentation and its edits.
+#[tauri::command(async)]
+fn revectorize(state: State<AppState>, settings: Settings) -> Res<View> {
+    with_doc(&state, |doc| {
+        doc.settings = settings;
+        refresh(doc)
+    })
+}
+
 /// Problem finder: pinch points in the current segmentation.
 #[tauri::command(async)]
 fn find_problems(state: State<AppState>) -> Res<Vec<Problem>> {
@@ -470,6 +508,47 @@ fn export(state: State<AppState>, path: String, options: ExportOptions) -> Res<S
     })
 }
 
+/// Save next to the source image with the same name and the given format.
+#[tauri::command(async)]
+fn quick_save(state: State<AppState>, format: Format, options: ExportOptions) -> Res<String> {
+    with_doc(&state, |doc| {
+        let src = doc.path.as_ref().ok_or("This image has no file yet; use Save As")?;
+        let vec = doc.vec.as_ref().ok_or("Vectorize the image first")?;
+        let target = src.with_extension(format.ext());
+        if target == *src {
+            return Err("Quick Save would overwrite the source image; use Save As".into());
+        }
+        export_file(vec, &target, format, &options)?;
+        Ok(target.display().to_string())
+    })
+}
+
+/// Export to a temporary file and open it with the program Windows associates
+/// with that format (the double-click action of the drag-and-drop box).
+#[tauri::command(async)]
+fn open_external(state: State<AppState>, format: Format, options: ExportOptions) -> Res<String> {
+    with_doc(&state, |doc| {
+        let vec = doc.vec.as_ref().ok_or("Vectorize the image first")?;
+        let stem = doc.path.as_ref().and_then(|p| p.file_stem()).map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "vector".into());
+        let dir = std::env::temp_dir().join("VectorFree");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let target = dir.join(format!("{stem}.{}", format.ext()));
+        export_file(vec, &target, format, &options)?;
+        open_path(&target)?;
+        Ok(target.display().to_string())
+    })
+}
+
+fn open_path(p: &std::path::Path) -> Res<()> {
+    #[cfg(windows)]
+    let r = std::process::Command::new("explorer").arg(p).spawn();
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg(p).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let r = std::process::Command::new("xdg-open").arg(p).spawn();
+    r.map(|_| ()).map_err(|e| format!("cannot open {}: {e}", p.display()))
+}
+
 /// SVG text of the result, for copying to the clipboard.
 #[tauri::command(async)]
 fn export_svg_text(state: State<AppState>, options: ExportOptions) -> Res<String> {
@@ -482,8 +561,11 @@ fn export_svg_text(state: State<AppState>, options: ExportOptions) -> Res<String
 const IMAGE_EXTS: [&str; 9] = ["png", "jpg", "jpeg", "gif", "bmp", "tif", "tiff", "webp", "ico"];
 
 #[tauri::command(async)]
-fn pick_images(app: AppHandle, multiple: bool) -> Vec<String> {
-    let d = app.dialog().file().add_filter("Images", &IMAGE_EXTS);
+fn pick_images(app: AppHandle, multiple: bool, directory: Option<String>) -> Vec<String> {
+    let mut d = app.dialog().file().add_filter("Images", &IMAGE_EXTS);
+    if let Some(dir) = directory.filter(|d| std::path::Path::new(d).is_dir()) {
+        d = d.set_directory(dir);
+    }
     let picked = if multiple { d.blocking_pick_files() } else { d.blocking_pick_file().map(|f| vec![f]) };
     picked
         .unwrap_or_default()
@@ -495,11 +577,15 @@ fn pick_images(app: AppHandle, multiple: bool) -> Vec<String> {
 
 #[tauri::command(async)]
 fn pick_save(app: AppHandle, default_name: String, ext: String) -> Option<String> {
-    app.dialog()
-        .file()
-        .set_file_name(&default_name)
-        .add_filter(ext.to_uppercase(), &[ext.as_str()])
-        .blocking_save_file()
+    // The chosen file type (extension) decides the export format; the
+    // default one is listed first.
+    let mut d = app.dialog().file().set_file_name(&default_name).add_filter(ext.to_uppercase(), &[ext.as_str()]);
+    for f in Format::ALL {
+        if f.ext() != ext {
+            d = d.add_filter(f.ext().to_uppercase(), &[f.ext()]);
+        }
+    }
+    d.blocking_save_file()
         .and_then(|f| f.into_path().ok())
         .map(|p| if p.extension().is_none() { p.with_extension(&ext) } else { p })
         .map(|p| p.display().to_string())
@@ -531,8 +617,11 @@ fn batch(
     options: ExportOptions,
     auto_kind: bool,
 ) -> Res<usize> {
-    let out = PathBuf::from(&out_dir);
-    std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+    // Empty output folder = save next to each source image.
+    let fixed_out = if out_dir.trim().is_empty() { None } else { Some(PathBuf::from(&out_dir)) };
+    if let Some(o) = &fixed_out {
+        std::fs::create_dir_all(o).map_err(|e| e.to_string())?;
+    }
     state.cancel_batch.store(false, Ordering::SeqCst);
     let total = paths.len();
     let mut ok = 0;
@@ -552,8 +641,13 @@ fn batch(
             }
             let vec = engine::vectorize(&engine::segment_image(&img, &s), &s);
             let stem = p.file_stem().unwrap_or_default().to_string_lossy().to_string();
+            let out = fixed_out.clone().unwrap_or_else(|| p.parent().map(PathBuf::from).unwrap_or_default());
             for f in &formats {
-                export_file(&vec, &out.join(format!("{stem}.{}", f.ext())), *f, &options)?;
+                let target = out.join(format!("{stem}.{}", f.ext()));
+                if target == p {
+                    return Err("output would overwrite the source image".into());
+                }
+                export_file(&vec, &target, *f, &options)?;
             }
             Ok(format!("{} colors ({:?})", vec.shapes.len(), s.kind))
         });
@@ -588,14 +682,18 @@ fn main() {
             set_alpha,
             set_transparent,
             merge_colors,
+            label_at,
             pick_color,
             edit,
             undo,
             redo,
             reset_edits,
             update,
+            revectorize,
             find_problems,
             export,
+            quick_save,
+            open_external,
             export_svg_text,
             pick_images,
             pick_save,

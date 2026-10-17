@@ -69,6 +69,8 @@ pub enum CurveMode {
 pub struct Advanced {
     /// Maximum fitting error in source pixels.
     pub tolerance: Option<f64>,
+    /// Multiplier on the automatic fitting error (fewer nodes > 1 > more nodes).
+    pub tolerance_scale: Option<f64>,
     /// Smoothing strength multiplier (0 = none, 1 = default, up to 4).
     pub smoothing: Option<f64>,
     /// Turns sharper than this angle (degrees) become corners. Higher finds
@@ -79,6 +81,21 @@ pub struct Advanced {
     /// Edge-preserving denoise before segmentation (overrides the default).
     pub denoise: Option<bool>,
     pub curves: CurveMode,
+    /// How hard to suppress the thin slivers anti-aliasing leaves between
+    /// shapes.
+    pub aa_rejection: Option<AaRejection>,
+    /// Find sharp corners (off: every outline is a smooth curve).
+    pub detect_corners: Option<bool>,
+    /// Use anti-aliasing to place edges with sub-pixel precision.
+    pub aa_engine: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AaRejection {
+    None,
+    Moderate,
+    Aggressive,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,6 +141,8 @@ pub struct Params {
     pub merge_by_color: bool,
     /// Recover sub-pixel edge positions from anti-aliasing.
     pub snap_edges: bool,
+    /// Assign anti-aliasing blend colors to the two colors they mix.
+    pub blend_aware: bool,
 }
 
 impl Settings {
@@ -151,23 +170,28 @@ impl Settings {
         // 32px icon is clearly visible.
         let size = width.max(height) as f64;
         let small = (size / 256.0).clamp(0.35, 1.0);
-        let tol = adv.tolerance.unwrap_or(tol * small).max(0.05);
+        let tol = adv.tolerance.unwrap_or(tol * small * adv.tolerance_scale.unwrap_or(1.0).clamp(0.1, 10.0)).max(0.05);
         let smooth = smooth * adv.smoothing.unwrap_or(1.0).clamp(0.0, 4.0);
         let min_area = adv.min_area.unwrap_or(area * scale);
         Params {
             min_region_area: (min_area * up * up).round().max(1.0) as usize,
-            mode_filter_passes: match self.kind {
-                ImageKind::ArtFlat => 0,
-                ImageKind::ArtBlended => 1,
-                ImageKind::Photo => 2,
+            mode_filter_passes: match (adv.aa_rejection, self.kind) {
+                (Some(AaRejection::None), _) => 0,
+                (Some(AaRejection::Moderate), _) => 1,
+                (Some(AaRejection::Aggressive), _) => 2,
+                (None, ImageKind::ArtFlat) => 0,
+                (None, ImageKind::ArtBlended) => 1,
+                (None, ImageKind::Photo) => 2,
             },
             smooth_passes: (smooth * up * up).round() as usize,
             fit_tolerance: tol * up,
-            corner_angle_deg: adv.corner_angle.unwrap_or(120.0).clamp(60.0, 175.0),
+            // Corner detection off = no angle qualifies as a corner.
+            corner_angle_deg: if adv.detect_corners == Some(false) { 0.0 } else { adv.corner_angle.unwrap_or(120.0).clamp(60.0, 175.0) },
             corner_span: (4.0 * up).round() as usize,
             curves: adv.curves,
             merge_by_color: self.kind == ImageKind::Photo,
-            snap_edges: self.kind != ImageKind::ArtFlat,
+            snap_edges: self.aa_engine(),
+            blend_aware: self.kind != ImageKind::Photo && adv.aa_rejection != Some(AaRejection::None),
         }
     }
 
@@ -177,6 +201,9 @@ impl Settings {
     /// boundaries. Pixel-exact art and big images are traced as is.
     pub fn upscale_for(&self, width: u32, height: u32) -> u32 {
         let m = width.max(height);
+        if !self.aa_engine() {
+            return 1;
+        }
         match self.kind {
             ImageKind::ArtFlat => 1,
             ImageKind::Photo if m <= 800 => 2,
@@ -185,6 +212,11 @@ impl Settings {
             _ if m <= 1600 => 2,
             _ => 1,
         }
+    }
+
+    /// Anti-aliasing engine: on for blended artwork and photos by default.
+    pub fn aa_engine(&self) -> bool {
+        self.advanced.aa_engine.unwrap_or(self.kind != ImageKind::ArtFlat)
     }
 
     fn denoise(&self) -> bool {
@@ -244,7 +276,7 @@ fn segment_prepared(img: &image::RgbaImage, settings: &Settings, pal: &[[u8; 3]]
     } else {
         img
     };
-    let mut seg = Segmentation::from_palette(src, pal, settings.kind != ImageKind::Photo);
+    let mut seg = Segmentation::from_palette(src, pal, params.blend_aware);
     seg.scale = up;
     seg.source = Some(std::sync::Arc::new(img.clone()));
     seg.cleanup(&params);
@@ -272,6 +304,16 @@ pub fn vectorize(seg: &Segmentation, settings: &Settings) -> VectorImage {
         img.height = h;
     }
     img
+}
+
+/// Outlines of the shapes hidden with the background eraser, for display.
+pub fn hidden_outlines(seg: &Segmentation, settings: &Settings) -> Option<VectorImage> {
+    if !seg.hidden.iter().any(|&h| h) {
+        return None;
+    }
+    let mut inv = seg.clone();
+    inv.hidden = seg.hidden.iter().map(|h| !h).collect();
+    Some(vectorize(&inv, settings))
 }
 
 /// One-shot convenience for batch processing.

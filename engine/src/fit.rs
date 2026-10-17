@@ -263,6 +263,9 @@ fn simplify_lines(d: &[Pt], tol: f64, out: &mut Vec<Seg>) {
 
 fn detect_corners(pts: &[Pt], closed: bool, max_angle_deg: f64, k: usize) -> Vec<usize> {
     let n = pts.len();
+    if max_angle_deg <= 0.0 {
+        return vec![]; // corner detection switched off
+    }
     if n < 2 * k + 1 && !closed {
         return vec![];
     }
