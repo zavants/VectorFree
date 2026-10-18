@@ -344,3 +344,83 @@ fn dxf_line_density_follows_option() {
     };
     assert!(count(1.0) < count(0.1), "fewer lines must give fewer vertices");
 }
+/// Anti-aliased "V" (dark on light), `s` scales the 420x320 design.
+fn aa_v(s: f64) -> (image::RgbaImage, Vec<(f64, f64)>) {
+    let poly: Vec<(f64, f64)> =
+        [(40.0, 40.0), (140.0, 40.0), (210.0, 230.0), (280.0, 40.0), (380.0, 40.0), (250.0, 290.0), (170.0, 290.0)].iter().map(|&(x, y)| (x * s, y * s)).collect();
+    let inside = |x: f64, y: f64| {
+        let mut c = false;
+        for i in 0..poly.len() {
+            let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+            if (a.1 > y) != (b.1 > y) && x < a.0 + (y - a.1) / (b.1 - a.1) * (b.0 - a.0) {
+                c = !c;
+            }
+        }
+        c
+    };
+    let (fg, bg) = ([30.0, 40.0, 110.0], [245.0, 242.0, 230.0]);
+    let img = image::RgbaImage::from_fn((420.0 * s) as u32, (320.0 * s) as u32, |x, y| {
+        let n = 8;
+        let mut cov = 0.0;
+        for sy in 0..n {
+            for sx in 0..n {
+                if inside(x as f64 + (sx as f64 + 0.5) / n as f64, y as f64 + (sy as f64 + 0.5) / n as f64) {
+                    cov += 1.0 / (n * n) as f64;
+                }
+            }
+        }
+        let c: Vec<u8> = (0..3).map(|k| (fg[k] * cov + bg[k] * (1.0 - cov)).round() as u8).collect();
+        image::Rgba([c[0], c[1], c[2], 255])
+    });
+    (img, poly)
+}
+
+/// Regression: long straight diagonal edges of anti-aliased art came out as
+/// many slightly wavy cubics instead of one straight segment.
+#[test]
+fn aa_diagonal_edges_stay_straight() {
+    for (s, q) in [(1.0, engine::Quality::High), (1.0, engine::Quality::Medium), (0.7, engine::Quality::High)] {
+        let (img, poly) = aa_v(s);
+        let settings = Settings { kind: ImageKind::ArtBlended, quality: q, ..Settings::default() };
+        let vec = vectorize(&segment_image(&img, &settings), &settings);
+        let v = vec.shapes.iter().find(|sh| sh.rgb[2] as i32 > sh.rgb[0] as i32 + 40).expect("V shape");
+        let outline = &v.outers[0];
+        // Every segment as (start, seg).
+        let mut segs = Vec::new();
+        let mut prev = outline.start;
+        for g in &outline.segs {
+            segs.push((prev, *g));
+            prev = g.end();
+        }
+        let at = |p: engine::Pt, g: &engine::Seg, t: f64| match *g {
+            engine::Seg::Line(e) => p.add(e.sub(p).scale(t)),
+            engine::Seg::Cubic(a, b, e) => engine::geom::bezier(p, a, b, e, t),
+        };
+        for i in 0..poly.len() {
+            let (a, b) = (engine::Pt::new(poly[i].0, poly[i].1), engine::Pt::new(poly[(i + 1) % poly.len()].0, poly[(i + 1) % poly.len()].1));
+            if (a.x - b.x).abs() < 1e-9 || (a.y - b.y).abs() < 1e-9 {
+                continue; // axis-aligned sides are easy
+            }
+            let ab = b.sub(a);
+            let len = ab.len();
+            let dist = |p: engine::Pt| (ab.x * p.sub(a).y - ab.y * p.sub(a).x).abs() / len;
+            let along = |p: engine::Pt| p.sub(a).dot(ab) / (len * len);
+            // Segments whose middle lies on this side.
+            let on: Vec<_> = segs.iter().filter(|(p, g)| {
+                let m = at(*p, g, 0.5);
+                dist(m) < 1.0 && (0.0..=1.0).contains(&along(m))
+            }).collect();
+            let mut worst: f64 = 0.0;
+            for (p, g) in &on {
+                for k in 0..=20 {
+                    let q = at(*p, g, k as f64 / 20.0);
+                    // Corners themselves are checked elsewhere.
+                    if q.dist(a) > 2.0 && q.dist(b) > 2.0 {
+                        worst = worst.max(dist(q));
+                    }
+                }
+            }
+            assert!(on.len() <= 2 && worst < 0.25, "scale {s} {q:?} side {i}: {} segments, deviation {worst:.3}: {on:?}", on.len());
+        }
+    }
+}

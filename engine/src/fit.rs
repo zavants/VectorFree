@@ -32,24 +32,59 @@ fn fit_polyline(grid: &[Pt], chain: &Chain, p: &Params, snapper: Option<&Snapper
         return (grid[0], vec![Seg::Line(grid[n - 1])]);
     }
     // Corners are found on the pixel grid, where they are unambiguous.
-    let mut corners = detect_corners(grid, closed, p.corner_angle_deg, p.corner_span);
+    // Supersampling and anti-aliasing round them off a little, so turns up
+    // to LOOSE_DEG wider than the limit are only candidates, decided below
+    // from the sub-pixel arms.
+    let found = detect_corners(grid, closed, p.corner_angle_deg, p.corner_span);
+    let loose: Vec<usize> = found.iter().filter(|c| c.1 > p.corner_angle_deg).map(|c| c.0).collect();
+    let mut corners: Vec<usize> = found.iter().map(|c| c.0).collect();
     // Then move points to their sub-pixel edge positions, except right at
     // corners: the anti-aliasing iso-line rounds them off, and corner
     // sharpening rebuilds them from the (snapped) straight arms instead.
     let mut snapped = grid.to_vec();
     if let Some(s) = snapper {
-        let margin = (p.corner_span / 3).max(1) as isize;
-        let mut keep = vec![false; n];
-        for &c in &corners {
-            for o in -margin..=margin {
-                let j = c as isize + o;
-                let j = if closed { j.rem_euclid(n as isize) } else { j };
-                if (0..n as isize).contains(&j) {
-                    keep[j as usize] = true;
+        let snap = |corners: &[usize]| {
+            let margin = (p.corner_span / 3).max(1) as isize;
+            let mut keep = vec![false; n];
+            for &c in corners {
+                for o in -margin..=margin {
+                    let j = c as isize + o;
+                    let j = if closed { j.rem_euclid(n as isize) } else { j };
+                    if (0..n as isize).contains(&j) {
+                        keep[j as usize] = true;
+                    }
                 }
             }
+            let mut snapped = grid.to_vec();
+            s.snap(chain, &mut snapped, &keep);
+            snapped
+        };
+        snapped = snap(&corners);
+        if !loose.is_empty() {
+            // A candidate is a corner if its straight sub-pixel arms meet at
+            // less than the limit angle.
+            let cos_thr = p.corner_angle_deg.to_radians().cos();
+            let all = corners.clone();
+            corners.retain(|c| {
+                if !loose.contains(c) {
+                    return true;
+                }
+                let i = all.iter().position(|a| a == c).unwrap();
+                match corner_arms(&snapped, closed, &all, i, p.corner_span) {
+                    Some(((ca, da, ra), (cb, db, rb))) if ra <= 0.45 && rb <= 0.45 => {
+                        let out = |c0: Pt, d: Pt| if d.dot(c0.sub(snapped[*c])) < 0.0 { d.scale(-1.0) } else { d };
+                        out(ca, da).dot(out(cb, db)) >= cos_thr
+                    }
+                    _ => false,
+                }
+            });
+            if corners.len() < all.len() {
+                snapped = snap(&corners);
+            }
         }
-        s.snap(chain, &mut snapped, &keep);
+    } else {
+        // Nothing sub-pixel to decide candidates with.
+        corners.retain(|c| !loose.contains(c));
     }
     let sharpened;
     let raw: &[Pt] = if corners.is_empty() {
@@ -91,11 +126,15 @@ fn fit_polyline(grid: &[Pt], chain: &Chain, p: &Params, snapper: Option<&Snapper
         breaks = vec![0, m - 1];
     }
     let tol2 = p.fit_tolerance * p.fit_tolerance;
+    // Sub-pixel snapping leaves up to ~0.1px of periodic ripple along straight
+    // edges; on small images the fitting tolerance drops below that and a
+    // straight side would be fitted as a chain of wobbly cubics.
+    let straight_tol = (p.fit_tolerance * 0.75).max(if snapper.is_some() { 0.15 * p.corner_span as f64 / 4.0 } else { 0.0 });
     let mut segs = Vec::new();
     for w in breaks.windows(2) {
         let (a, b) = (w[0], w[1]);
         let d = &pts[a..=b];
-        if d.len() <= 2 || is_straight(d, p.fit_tolerance * 0.75) {
+        if d.len() <= 2 || is_straight(d, straight_tol) {
             segs.push(Seg::Line(d[d.len() - 1]));
             continue;
         }
@@ -144,7 +183,7 @@ fn straighten(segs: &mut [Seg], start: Pt, eps: f64) {
 }
 
 /// Least-squares line through points: (centroid, unit direction, rms residual).
-fn fit_line(pts: &[Pt]) -> Option<(Pt, Pt, f64)> {
+fn fit_line(pts: &[Pt]) -> Option<Line> {
     if pts.len() < 2 {
         return None;
     }
@@ -173,6 +212,63 @@ fn intersect(c1: Pt, d1: Pt, c2: Pt, d2: Pt) -> Option<Pt> {
     Some(c1.add(d1.scale(t)))
 }
 
+/// A fitted line: (centroid, unit direction, rms residual).
+type Line = (Pt, Pt, f64);
+
+/// Lines fitted to the two arms of corner `corners[ci_idx]`. Arms start just
+/// past the corner zone (left unsnapped, see fit_polyline) and stay within
+/// half the way to the neighbouring corners.
+fn corner_arms(raw: &[Pt], closed: bool, corners: &[usize], ci_idx: usize, k: usize) -> Option<(Line, Line)> {
+    let n = raw.len() as isize;
+    let idx = |i: isize| -> Option<usize> {
+        if closed {
+            Some(i.rem_euclid(n) as usize)
+        } else if (0..n).contains(&i) {
+            Some(i as usize)
+        } else {
+            None
+        }
+    };
+    // Distance (in points) from each corner to its neighbouring corners.
+    let gap = |a: usize, b: usize| -> isize {
+        if closed {
+            ((b as isize - a as isize).rem_euclid(n)).max(1)
+        } else {
+            (b as isize - a as isize).abs()
+        }
+    };
+    let c = corners[ci_idx];
+    let ci = c as isize;
+    let m = corners.len();
+    let prev_gap = if m > 1 && (closed || ci_idx > 0) { gap(corners[(ci_idx + m - 1) % m], c) } else { ci + 1 };
+    let next_gap = if m > 1 && (closed || ci_idx + 1 < m) { gap(c, corners[(ci_idx + 1) % m]) } else { n - ci };
+    let near = (k / 3) as isize + 1;
+    let far = (k as isize).min(prev_gap.min(next_gap) / 2).max(near + 1);
+    let arm = |dir: isize, far: isize| -> Option<Line> {
+        let pts: Option<Vec<Pt>> = (near..=far).map(|o| idx(ci + dir * o).map(|j| raw[j])).collect();
+        fit_line(&pts?)
+    };
+    // A short arm gives a poor direction (sub-pixel snapping leaves a little
+    // periodic noise), and at acute corners a small angle error moves the
+    // intersection far. Extend each arm along its own side while it stays
+    // straight; the allowed residual grows with supersampling like the noise.
+    let ext_tol = 0.25 * (k as f64 / 8.0).max(1.0);
+    let extend = |dir: isize, gap: isize| -> Option<Line> {
+        let mut best = arm(dir, far)?;
+        let limit = (gap / 2).min(8 * k as isize);
+        let mut f = far * 2;
+        while best.2 <= 0.45 && f <= limit {
+            match arm(dir, f) {
+                Some(l) if l.2 <= ext_tol => best = l,
+                _ => break,
+            }
+            f *= 2;
+        }
+        Some(best)
+    };
+    Some((extend(-1, prev_gap)?, extend(1, next_gap)?))
+}
+
 /// Restore sharp corners rounded off by anti-aliasing or supersampling: fit a
 /// line to each arm (away from the corner itself), move the corner to their
 /// intersection and project the points between onto the arms. Only applied
@@ -190,28 +286,10 @@ fn sharpen_corners(raw: &[Pt], closed: bool, corners: &[usize], k: usize) -> Vec
         }
     };
     let max_move = (k as f64 / 4.0 * 1.6).max(1.2);
-    // Distance (in points) from each corner to its neighbouring corners.
-    let gap = |a: usize, b: usize| -> isize {
-        if closed {
-            ((b as isize - a as isize).rem_euclid(n)).max(1)
-        } else {
-            (b as isize - a as isize).abs()
-        }
-    };
+    let near = (k / 3) as isize + 1;
     for (ci_idx, &c) in corners.iter().enumerate() {
         let ci = c as isize;
-        let m = corners.len();
-        let prev_gap = if m > 1 && (closed || ci_idx > 0) { gap(corners[(ci_idx + m - 1) % m], c) } else { ci + 1 };
-        let next_gap = if m > 1 && (closed || ci_idx + 1 < m) { gap(c, corners[(ci_idx + 1) % m]) } else { n - ci };
-        // Arms start just past the corner zone (left unsnapped, see
-        // fit_polyline) and stay within half the way to the next corner.
-        let near = (k / 3) as isize + 1;
-        let far = (k as isize).min(prev_gap.min(next_gap) / 2).max(near + 1);
-        let arm = |dir: isize| -> Option<Vec<Pt>> {
-            (near..=far).map(|o| idx(ci + dir * o).map(|j| raw[j])).collect()
-        };
-        let (Some(a), Some(b)) = (arm(-1), arm(1)) else { continue };
-        let (Some((ca, da, ra)), Some((cb, db, rb))) = (fit_line(&a), fit_line(&b)) else { continue };
+        let Some(((ca, da, ra), (cb, db, rb))) = corner_arms(raw, closed, corners, ci_idx, k) else { continue };
         if ra > 0.45 || rb > 0.45 {
             continue; // an arm is curved: keep the corner as detected
         }
@@ -261,7 +339,12 @@ fn simplify_lines(d: &[Pt], tol: f64, out: &mut Vec<Seg>) {
     out.push(Seg::Line(d[d.len() - 1]));
 }
 
-fn detect_corners(pts: &[Pt], closed: bool, max_angle_deg: f64, k: usize) -> Vec<usize> {
+/// Extra angle (degrees) within which grid corners are only candidates.
+const LOOSE_DEG: f64 = 15.0;
+
+/// Corners as (index, angle in degrees measured on the grid); angles up to
+/// `max_angle_deg + LOOSE_DEG` are reported.
+fn detect_corners(pts: &[Pt], closed: bool, max_angle_deg: f64, k: usize) -> Vec<(usize, f64)> {
     let n = pts.len();
     if max_angle_deg <= 0.0 {
         return vec![]; // corner detection switched off
@@ -271,7 +354,7 @@ fn detect_corners(pts: &[Pt], closed: bool, max_angle_deg: f64, k: usize) -> Vec
     }
     // On small closed loops long arms would wrap around past other corners.
     let k = if closed { k.min(n / 4).max(1) } else { k };
-    let cos_thr = max_angle_deg.to_radians().cos();
+    let cos_thr = (max_angle_deg + LOOSE_DEG).min(179.0).to_radians().cos();
     let get = |i: isize| -> Option<Pt> {
         if closed {
             Some(pts[i.rem_euclid(n as isize) as usize])
@@ -331,7 +414,7 @@ fn detect_corners(pts: &[Pt], closed: bool, max_angle_deg: f64, k: usize) -> Vec
             }
         }
         if is_max {
-            out.push(i);
+            out.push((i, sharp[i].clamp(-1.0, 1.0).acos().to_degrees()));
         }
     }
     out
