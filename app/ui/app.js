@@ -6,7 +6,7 @@ const TAURI = window.__TAURI__;
 const invoke = TAURI.core.invoke;
 const $ = (id) => document.getElementById(id);
 const SVGNS = "http://www.w3.org/2000/svg";
-const VERSION = "0.3.0";
+const VERSION = "0.3.1";
 
 /** Tiny element builder: h("div", {class: "x", onclick}, child, "text"). */
 function h(tag, attrs = {}, ...kids) {
