@@ -275,6 +275,11 @@ Ideas for later: Linux/macOS builds, more languages, centerline (single-stroke) 
 
 Bug reports and pull requests are welcome. When reporting a tracing problem, attach the input image (if you can share it) and the settings you used. Please run `cargo test -p vectorfree-engine` before sending changes to the engine.
 
+## Authors
+
+- **[zavants](https://github.com/zavants)** – creator and maintainer.
+- **Claude** (Anthropic) – collaborator: designed and wrote much of the engine, app and documentation together with zavants, as AI pair programmer. Commits it helped with carry a `Co-Authored-By: Claude` trailer.
+
 ## Acknowledgements
 
 - J. Diebel, *Bayesian Image Vectorization: the probabilistic inversion of vector image rasterization*, PhD thesis, Stanford University, 2008 — the idea of using anti-aliasing to recover edge positions.

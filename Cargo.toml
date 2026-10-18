@@ -6,6 +6,8 @@ members = ["engine", "cli", "app/src-tauri"]
 version = "0.3.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+authors = ["zavants <info@zavants.com>", "Claude (Anthropic) <noreply@anthropic.com>"]
+repository = "https://github.com/zavants/VectorFree"
 
 [profile.release]
 opt-level = 3
