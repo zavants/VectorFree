@@ -265,7 +265,6 @@ docs/screenshots/  Images used in this README
 
 - Windows builds only so far; the code is cross-platform but Linux and macOS builds are untested.
 - DXF 2000 splines, AI and EPS output have not yet been validated in AutoCAD, Illustrator or CorelDRAW. DXF *lines only* (R12) is the safest choice for CAD/CAM.
-- Long straight diagonal edges can come out slightly wavy with too many nodes; improving straight-edge detection is the next engine task.
 - The interface is in English only.
 - Executables are not code-signed.
 
