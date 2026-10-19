@@ -57,7 +57,7 @@ $env:TAURI_SIGNING_PRIVATE_KEY = [IO.File]::ReadAllText($KeyPath)
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
 Push-Location app
 try { Run "desktop app + installer" { npx tauri build } } finally { Pop-Location }
-Remove-Item Env:\TAURI_SIGNING_PRIVATE_KEY, Env:\TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+Remove-Item Env:\TAURI_SIGNING_PRIVATE_KEY, Env:\TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
 
 # ---- collect artifacts
 $dist = "$root\dist\$Version"
