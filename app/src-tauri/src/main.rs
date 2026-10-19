@@ -674,25 +674,43 @@ struct PendingUpdate(Mutex<Option<tauri_plugin_updater::Update>>);
 
 #[derive(Serialize)]
 struct UpdateInfo {
+    /// Latest published version.
     version: String,
+    /// Version running now.
     current: String,
+    /// The latest version is newer than the running one.
+    available: bool,
     notes: Option<String>,
     date: Option<String>,
 }
 
-/// Ask GitHub (latest.json of the newest release) whether a newer, signed
-/// version exists. Nothing is downloaded here.
+/// Ask GitHub (latest.json of the newest release) for the latest version and
+/// whether it is newer than this one. Nothing is downloaded here.
 #[tauri::command]
-async fn check_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> Res<Option<UpdateInfo>> {
+async fn check_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> Res<UpdateInfo> {
     use tauri_plugin_updater::UpdaterExt;
-    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
-    let info = update.as_ref().map(|u| UpdateInfo {
-        version: u.version.clone(),
-        current: u.current_version.clone(),
-        notes: u.body.clone(),
-        date: u.date.map(|d| d.to_string()),
-    });
-    *pending.0.lock().map_err(|_| "state poisoned")? = update;
+    // Accept any published version so the latest one is reported even when
+    // it is not newer; whether to offer it is decided below.
+    let update = app
+        .updater_builder()
+        .version_comparator(|_, _| true)
+        .build()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("The update server returned no release information")?;
+    let current = app.package_info().version.clone();
+    let latest = semver::Version::parse(&update.version).map_err(|e| format!("bad version {}: {e}", update.version))?;
+    let available = latest > current;
+    let info = UpdateInfo {
+        version: update.version.clone(),
+        current: current.to_string(),
+        available,
+        notes: update.body.clone(),
+        date: update.date.map(|d| d.to_string()),
+    };
+    *pending.0.lock().map_err(|_| "state poisoned")? = if available { Some(update) } else { None };
     Ok(info)
 }
 

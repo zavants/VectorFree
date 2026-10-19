@@ -35,6 +35,12 @@ button:hover:not(:disabled) { border-color: #8c93a6; background: linear-gradient
 button:active:not(:disabled) { background: linear-gradient(#e2e4e9, #f3f4f6); }
 button:disabled { opacity: .45; cursor: default; }
 button.primary { background: linear-gradient(#3a6fc4, #2a5db0); color: #fff; border-color: #24509a; }
+/* Highlighted buttons keep their color on hover/press (the generic hover
+   rule above is more specific than a plain class). */
+button.primary:hover:not(:disabled) { background: linear-gradient(#4a7fd4, #3266bd); border-color: #1d4485; color: #fff; }
+button.primary:active:not(:disabled) { background: linear-gradient(#2a5db0, #24509a); color: #fff; }
+button.on:hover:not(:disabled), .help-btn.on:hover:not(:disabled) { background: linear-gradient(#ffd06b, #f7b03a); border-color: #b9780c; }
+button.on:active:not(:disabled) { background: linear-gradient(#f6a623, #e8960f); }
 
 .app { flex: 1; display: flex; min-height: 0; }
 .spacer { flex: 1; }

@@ -1681,27 +1681,51 @@ TAURI.webview.getCurrentWebview().onDragDropEvent((ev) => {
 // and the updater only accepts packages signed with the project's key.
 const updPrefs = () => ({ auto: true, skip: null, ...store.get("updates", {}) });
 
+/** Show the update dialog. `offer` = a newer version can be installed. */
+function showUpdateDialog({ title, text, notes = "", offer }) {
+  $("updTitle").textContent = title;
+  $("updText").textContent = text;
+  $("updNotes").textContent = notes.trim();
+  $("updAuto").checked = updPrefs().auto;
+  $("updProgressRow").hidden = true;
+  $("updInstall").hidden = $("updSkip").hidden = !offer;
+  $("updLater").textContent = offer ? "Later" : "Close";
+  $("updLater").classList.toggle("primary", !offer);
+  for (const id of ["updInstall", "updLater", "updSkip"]) $(id).disabled = false;
+  $("updLater").onclick = () => $("updateDlg").close();
+  if (!$("updateDlg").open) $("updateDlg").showModal();
+}
+
 async function checkForUpdates(manual = false) {
   const prefs = updPrefs();
+  if (manual) {
+    showUpdateDialog({ title: "Checking for updates…", text: `Installed version: ${VERSION}. Contacting GitHub…`, offer: false });
+    $("updLater").disabled = true;
+  }
   let info;
   try {
-    if (manual) setStatus("Checking for updates…");
     info = await invoke("check_update");
   } catch (e) {
-    if (manual) setStatus(`Could not check for updates: ${e}`, true);
+    if (manual) showUpdateDialog({ title: "Could not check for updates", text: `Installed version: ${VERSION}. ${e}`, offer: false });
     return;
   }
-  if (!info) {
-    if (manual) setStatus(`Vector Free ${VERSION} is up to date.`);
+  if (!info.available) {
+    if (manual) {
+      showUpdateDialog({
+        title: "Vector Free is up to date",
+        text: `Installed version: ${info.current}. Latest version: ${info.version}. No updates are available.`,
+        offer: false,
+      });
+    }
     return;
   }
   if (!manual && prefs.skip === info.version) return;
-  $("updTitle").textContent = `Vector Free ${info.version} is available`;
-  $("updText").textContent = `You have version ${info.current}. Do you want to download and install the new version now? Vector Free will restart.`;
-  $("updNotes").textContent = (info.notes || "").trim();
-  $("updAuto").checked = prefs.auto;
-  $("updProgressRow").hidden = true;
-  for (const id of ["updInstall", "updLater", "updSkip"]) $(id).disabled = false;
+  showUpdateDialog({
+    title: `Vector Free ${info.version} is available`,
+    text: `Installed version: ${info.current}. Latest version: ${info.version}. Do you want to download and install it now? Vector Free will restart.`,
+    notes: info.notes || "",
+    offer: true,
+  });
   $("updSkip").onclick = () => { store.set("updates", { ...updPrefs(), skip: info.version }); $("updateDlg").close(); };
   $("updLater").onclick = () => $("updateDlg").close();
   $("updInstall").onclick = () => installUpdate();
