@@ -257,3 +257,7 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 .keys td { padding: 3px 6px; border-bottom: 1px solid var(--line-soft); }
 .keys td:first-child { font-family: Consolas, monospace; white-space: nowrap; color: var(--muted); }
 .palette-line { font-size: 12px; margin-top: 4px; }
+.upd-notes { max-height: 220px; overflow-y: auto; background: #f6f7f9; border: 1px solid var(--line-soft); border-radius: 6px; padding: 8px 10px; font-size: 12px; white-space: pre-wrap; margin: 8px 0; user-select: text; }
+.upd-notes:empty { display: none; }
+#updateDlg { width: min(520px, 92vw); }
+#updateDlg menu { align-items: center; }

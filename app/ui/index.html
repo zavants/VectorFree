@@ -105,6 +105,7 @@
 
   <!-- More Options menu -->
   <div class="menu" id="moreMenu" hidden>
+    <button data-menu="updates">Check for Updates…</button>
     <button data-menu="about">About Vector Free</button>
     <button data-menu="shortcuts">Keyboard Shortcuts</button>
     <button data-menu="restore">Restore Default Settings</button>
@@ -118,6 +119,22 @@
       <p class="muted">The tracing approach is inspired by published research on vectorizing anti-aliased images (J. Diebel, <i>Bayesian Image Vectorization</i>, Stanford, 2008). Vector Free is not affiliated with any other product.</p>
       <p class="muted">License: MIT or Apache-2.0.</p>
       <menu><button value="close" class="primary">Close</button></menu>
+    </form>
+  </dialog>
+
+  <dialog id="updateDlg">
+    <form method="dialog">
+      <h3 id="updTitle">Update available</h3>
+      <p id="updText"></p>
+      <div id="updNotes" class="upd-notes"></div>
+      <div id="updProgressRow" hidden><progress id="updProgress" max="1" value="0"></progress><p class="muted" id="updProgressText"></p></div>
+      <label class="check"><input type="checkbox" id="updAuto"> Check for updates when Vector Free starts</label>
+      <menu>
+        <button type="button" id="updSkip">Skip This Version</button>
+        <span class="spacer"></span>
+        <button type="button" id="updLater">Later</button>
+        <button type="button" id="updInstall" class="primary">Install Now</button>
+      </menu>
     </form>
   </dialog>
 

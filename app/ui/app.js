@@ -1512,6 +1512,7 @@ for (const b of document.querySelectorAll("#moreMenu button")) {
     closeMenu();
     const a = b.dataset.menu;
     if (a === "about") $("aboutDlg").showModal();
+    if (a === "updates") checkForUpdates(true);
     if (a === "shortcuts") { $("helpPane").hidden = false; $("helpBtn").classList.add("on"); showHelp("shortcuts"); }
     if (a === "restore") {
       for (const k of ["mode", "export", "prefs", "recentBasic", "batchFormats"]) store.set(k, null);
@@ -1675,6 +1676,66 @@ TAURI.webview.getCurrentWebview().onDragDropEvent((ev) => {
   }
 });
 
+// ---------------------------------------------------------------- updates
+// Releases are published on GitHub; the app asks before downloading anything,
+// and the updater only accepts packages signed with the project's key.
+const updPrefs = () => ({ auto: true, skip: null, ...store.get("updates", {}) });
+
+async function checkForUpdates(manual = false) {
+  const prefs = updPrefs();
+  let info;
+  try {
+    if (manual) setStatus("Checking for updates…");
+    info = await invoke("check_update");
+  } catch (e) {
+    if (manual) setStatus(`Could not check for updates: ${e}`, true);
+    return;
+  }
+  if (!info) {
+    if (manual) setStatus(`Vector Free ${VERSION} is up to date.`);
+    return;
+  }
+  if (!manual && prefs.skip === info.version) return;
+  $("updTitle").textContent = `Vector Free ${info.version} is available`;
+  $("updText").textContent = `You have version ${info.current}. Do you want to download and install the new version now? Vector Free will restart.`;
+  $("updNotes").textContent = (info.notes || "").trim();
+  $("updAuto").checked = prefs.auto;
+  $("updProgressRow").hidden = true;
+  for (const id of ["updInstall", "updLater", "updSkip"]) $(id).disabled = false;
+  $("updSkip").onclick = () => { store.set("updates", { ...updPrefs(), skip: info.version }); $("updateDlg").close(); };
+  $("updLater").onclick = () => $("updateDlg").close();
+  $("updInstall").onclick = () => installUpdate();
+  if (!$("updateDlg").open) $("updateDlg").showModal();
+}
+
+async function installUpdate() {
+  for (const id of ["updInstall", "updLater", "updSkip"]) $(id).disabled = true;
+  $("updProgressRow").hidden = false;
+  $("updProgressText").textContent = "Downloading…";
+  const unlisten = await TAURI.event.listen("update-progress", ({ payload: p }) => {
+    const mb = (n) => (n / 1048576).toFixed(1);
+    if (p.total) {
+      $("updProgress").max = p.total;
+      $("updProgress").value = p.downloaded;
+      $("updProgressText").textContent = `Downloading… ${mb(p.downloaded)} of ${mb(p.total)} MB`;
+    } else {
+      $("updProgressText").textContent = `Downloading… ${mb(p.downloaded)} MB`;
+    }
+  });
+  try {
+    await invoke("install_update");
+    $("updProgressText").textContent = "Installing… Vector Free will restart.";
+  } catch (e) {
+    $("updProgressText").textContent = `Update failed: ${e}`;
+    for (const id of ["updLater"]) $(id).disabled = false;
+  } finally {
+    unlisten();
+  }
+}
+
+$("updAuto").addEventListener("change", () => store.set("updates", { ...updPrefs(), auto: $("updAuto").checked }));
+
 // ---------------------------------------------------------------- start
 enterPage();
 invoke("startup_file").then((p) => p && openPath(p)).catch(() => {});
+if (updPrefs().auto) setTimeout(() => checkForUpdates(false), 3000);

@@ -666,10 +666,69 @@ fn cancel_batch(state: State<AppState>) {
     state.cancel_batch.store(true, Ordering::SeqCst);
 }
 
+// ---------------------------------------------------------------- updates
+
+/// An update found by `check_update`, kept until the user accepts it.
+#[derive(Default)]
+struct PendingUpdate(Mutex<Option<tauri_plugin_updater::Update>>);
+
+#[derive(Serialize)]
+struct UpdateInfo {
+    version: String,
+    current: String,
+    notes: Option<String>,
+    date: Option<String>,
+}
+
+/// Ask GitHub (latest.json of the newest release) whether a newer, signed
+/// version exists. Nothing is downloaded here.
+#[tauri::command]
+async fn check_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> Res<Option<UpdateInfo>> {
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
+    let info = update.as_ref().map(|u| UpdateInfo {
+        version: u.version.clone(),
+        current: u.current_version.clone(),
+        notes: u.body.clone(),
+        date: u.date.map(|d| d.to_string()),
+    });
+    *pending.0.lock().map_err(|_| "state poisoned")? = update;
+    Ok(info)
+}
+
+#[derive(Serialize, Clone)]
+struct UpdateProgress {
+    downloaded: u64,
+    total: Option<u64>,
+}
+
+/// Download the update the user accepted, verify its signature, run the
+/// installer and restart. Emits `update-progress` while downloading.
+#[tauri::command]
+async fn install_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> Res<()> {
+    let update = pending.0.lock().map_err(|_| "state poisoned")?.take().ok_or("No update to install; check again")?;
+    let mut downloaded = 0u64;
+    let emitter = app.clone();
+    update
+        .download_and_install(
+            move |chunk, total| {
+                downloaded += chunk as u64;
+                let _ = emitter.emit("update-progress", UpdateProgress { downloaded, total });
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    app.restart();
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
+        .manage(PendingUpdate::default())
         .invoke_handler(tauri::generate_handler![
             open_image,
             open_image_bytes,
@@ -699,7 +758,9 @@ fn main() {
             pick_save,
             pick_folder,
             batch,
-            cancel_batch
+            cancel_batch,
+            check_update,
+            install_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running Vector Free");

@@ -3,6 +3,7 @@
 
 # Portable build copied here for distribution (binaries)
 /portable/
+/dist/
 
 # Node dependencies (Tauri CLI)
 node_modules/
