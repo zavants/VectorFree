@@ -4,7 +4,7 @@
 
 It works fully automatically in one click, or guides you step by step with a wizard and lets you fix the result by hand. It runs entirely on your computer: no uploads, no account, no watermark.
 
-[**⬇ Download the latest release**](https://github.com/zavants/VectorFree/releases/latest) · Windows 10/11 · portable, no installer
+[**⬇ Download the latest release**](https://github.com/zavants/VectorFree/releases/latest) · Windows 10/11 · installer with automatic updates, or portable · [Changelog](CHANGELOG.md)
 
 ![Review Result page](docs/screenshots/05-review-result.png)
 
