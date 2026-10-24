@@ -61,6 +61,7 @@ const ICON = {
   batch: svg(`<rect x="34" y="12" width="46" height="36" fill="#fff" stroke="#556" stroke-width="2"/><rect x="26" y="22" width="46" height="36" fill="#fff" stroke="#556" stroke-width="2"/><rect x="18" y="32" width="46" height="36" fill="#cfe2ff" stroke="#556" stroke-width="2"/><path d="M24 62l12-14 9 9 6-6 10 11z" fill="#3b7d3b"/>`),
   addImages: svg(`<path d="M14 24h26l7 7h43v41H14z" fill="#f1c96a" stroke="#b58a2c" stroke-width="2"/><circle cx="26" cy="66" r="13" fill="#2e9b3a" stroke="#fff" stroke-width="3"/><path d="M26 59v14M19 66h14" stroke="#fff" stroke-width="4"/>`),
   auto: svg(`<circle cx="52" cy="44" r="30" fill="#e8f3e8" stroke="#2e9b3a" stroke-width="3"/><path d="M58 18L38 48h14l-6 24 22-32H54z" fill="#f6b21a" stroke="#a87410" stroke-width="2" stroke-linejoin="round"/>`),
+  clean: svg(`<path d="M32 18h40a16 16 0 0 1 16 16v20a16 16 0 0 1-16 16H32a16 16 0 0 1-16-16V34a16 16 0 0 1 16-16z" fill="#e8f3e8" stroke="#2e9b3a" stroke-width="3"/>${[[32, 18], [72, 18], [88, 34], [88, 54], [72, 70], [32, 70], [16, 54], [16, 34]].map(([x, y]) => `<rect x="${x - 3}" y="${y - 3}" width="6" height="6" fill="#fff" stroke="#1a4fa0" stroke-width="2"/>`).join("")}<path d="M56 26L42 46h10l-4 16 16-22H54z" fill="#f6b21a" stroke="#a87410" stroke-width="2" stroke-linejoin="round"/>`),
   basic: svg(`<rect x="22" y="14" width="60" height="60" rx="6" fill="#fff" stroke="#556" stroke-width="2"/>${[0, 1, 2].map((i) => `<rect x="30" y="${24 + i * 16}" width="10" height="10" fill="${i === 1 ? "#2a5db0" : "#fff"}" stroke="#2a5db0" stroke-width="2"/><rect x="46" y="${27 + i * 16}" width="28" height="4" fill="#99a"/>`).join("")}`),
   advanced: svg(`${[0, 1, 2, 3].map((i) => `<rect x="${22 + i * 18}" y="16" width="4" height="58" fill="#556"/><rect x="${16 + i * 18}" y="${[40, 24, 52, 32][i]}" width="16" height="10" rx="2" fill="#e9eaee" stroke="#333" stroke-width="2"/>`).join("")}`),
   photo: svg(`<rect x="10" y="10" width="84" height="68" fill="#9fd0f4"/><circle cx="72" cy="28" r="9" fill="#ffd34d"/><path d="M10 78l26-34 16 18 12-12 30 28z" fill="#4f8a3c"/><path d="M10 78l26-34 8 9" fill="#6aa253"/>`),
@@ -95,6 +96,7 @@ const S = {
   page: "load",
   history: [],
   mode: store.get("mode", "basic"),
+  cleanLines: store.get("mode", "basic") === "clean", // straight stretches stay lines (Clean Lines mode)
   kind: "art_blended",
   quality: "high",
   colorMode: "custom",       // two | custom | unlimited
@@ -117,7 +119,7 @@ const S = {
   z: 1, px: 0, py: 0, space: false, shift: false,
   problems: [], probIdx: -1,
   crop: null,
-  batch: { files: [], sel: -1, out: "", outMode: "same", formats: store.get("batchFormats", ["svg"]), auto: true, running: false, log: [] },
+  batch: { files: [], sel: -1, out: "", outMode: "same", formats: store.get("batchFormats", ["svg"]), auto: true, clean: false, running: false, log: [] },
   helpTopic: null,
   helpHistory: [],
 };
@@ -134,13 +136,17 @@ function setStatus(text, isError = false) {
   s.classList.toggle("error", isError);
 }
 
+// Clean Lines is Fully Automatic plus line-aware fitting.
+const autoMode = () => S.mode === "auto" || S.mode === "clean";
+
 function summary() {
   if (!S.info) return "";
   if (S.mode === "advanced") return "Advanced";
   if (S.mode === "auto") return "Fully Automatic";
+  if (S.mode === "clean") return "Clean Lines";
   const colors = S.colorMode === "unlimited" ? "Unlimited colors" : S.colorMode === "two" ? "2 colors"
     : S.palette.length ? `${S.palette.length} colors` : "Fixed colors";
-  return `Basic: ${KIND_SUMMARY[S.kind]}, ${Q_LABEL[S.quality]}, ${colors}`;
+  return `Basic: ${KIND_SUMMARY[S.kind]}, ${Q_LABEL[S.quality]}, ${colors}${S.cleanLines ? ", clean lines" : ""}`;
 }
 
 function updateStatusInfo() {
@@ -193,6 +199,7 @@ function buildSettings() {
   } else if (S.mode === "basic" && S.colorMode === "two" && !S.palette.length) {
     s.num_colors = 2;
   }
+  if (S.cleanLines && S.mode !== "advanced") s.advanced.clean_lines = true;
   return s;
 }
 
@@ -759,18 +766,19 @@ function pushRecent(key, value, max = 8) {
 
 function rememberBasic() {
   if (S.mode === "advanced") return;
-  const entry = { label: summary(), mode: S.mode, kind: S.kind, quality: S.quality, colorMode: S.colorMode };
+  const entry = { label: summary(), mode: S.mode, kind: S.kind, quality: S.quality, colorMode: S.colorMode, cleanLines: S.cleanLines };
   const list = store.get("recentBasic", []).filter((e) => e.label !== entry.label);
   list.unshift(entry);
   store.set("recentBasic", list.slice(0, 6));
 }
 
 function snapshotSettings(name) {
-  return { name, mode: S.mode, kind: S.kind, quality: S.quality, colorMode: S.colorMode, palette: [...S.palette], adv: { ...S.adv } };
+  return { name, mode: S.mode, kind: S.kind, quality: S.quality, colorMode: S.colorMode, cleanLines: S.cleanLines, palette: [...S.palette], adv: { ...S.adv } };
 }
 
 function applySnapshot(s) {
   S.mode = s.mode || "basic";
+  S.cleanLines = !!s.cleanLines || S.mode === "clean";
   S.kind = s.kind || S.kind;
   S.quality = s.quality || S.quality;
   S.colorMode = s.colorMode || S.colorMode;
@@ -956,6 +964,8 @@ PAGES.wizardMode = {
   render: () => [
     card({ icon: ICON.auto, title: "Fully Automatic", bullets: ["Single-click vectorization.", "Vector Free answers every question itself."],
       selected: S.mode === "auto", onclick: () => setMode("auto"), ondblclick: () => { setMode("auto"); nav("next"); } }),
+    card({ icon: ICON.clean, title: "Clean Lines", bullets: ["Single-click, like Fully Automatic.", "Straight edges stay straight: best for logos and lettering."],
+      selected: S.mode === "clean", onclick: () => setMode("clean"), ondblclick: () => { setMode("clean"); nav("next"); } }),
     card({ icon: ICON.basic, title: "Basic", bullets: ["A few simple multiple-choice questions.", "Best for most images."],
       selected: S.mode === "basic", onclick: () => setMode("basic"), ondblclick: () => { setMode("basic"); nav("next"); } }),
     card({ icon: ICON.advanced, title: "Advanced", bullets: ["Fine-tuned control.", "More complicated choices."],
@@ -982,7 +992,7 @@ PAGES.wizardMode = {
   ],
   canNext: () => !!S.info,
   next: async () => {
-    if (S.mode === "auto") {
+    if (autoMode()) {
       S.kind = S.info.suggested_kind;
       S.quality = S.kind === "photo" ? "medium" : S.info.exact_colors <= 2000 ? "high" : "medium";
       S.palette = [];
@@ -994,6 +1004,7 @@ PAGES.wizardMode = {
 
 function setMode(m) {
   S.mode = m;
+  S.cleanLines = m === "clean";
   store.set("mode", m);
   S.ran = false;
   renderPage();
@@ -1132,18 +1143,18 @@ PAGES.review = {
     const rerun = async () => { await runVectorize(); renderPage(); };
     const detail = ["high", "medium", "low"].map((q) => h("button", {
       class: `tbtn${S.quality === q ? " on" : ""}`,
-      onclick: async () => { S.quality = q; if (S.mode === "auto") S.mode = "basic"; await rerun(); },
+      onclick: async () => { S.quality = q; if (autoMode()) S.mode = "basic"; await rerun(); },
     }, Q_LABEL[q]));
-    const unlimited = S.colorMode === "unlimited" || (S.mode === "auto" && !S.palette.length);
+    const unlimited = S.colorMode === "unlimited" || (autoMode() && !S.palette.length);
     return [
       card({ icon: ICON.done, title: "Done Reviewing", bullets: ["Click here to continue.", "Skip this page next time with the box below."], selected: true, onclick: () => nav("next") }),
       group("Improve Result",
         h("div", { class: "toggle-col" }, h("h4", {}, "Detail Level"), detail),
         h("hr", { class: "sep" }),
         h("div", { class: "toggle-col" }, h("h4", {}, "Colors"),
-          h("button", { class: `tbtn${unlimited ? " on" : ""}`, onclick: async () => { S.mode = S.mode === "auto" ? "basic" : S.mode; S.colorMode = "unlimited"; S.palette = []; await rerun(); } }, "Unlimited Colors"),
-          h("button", { class: `tbtn${!unlimited ? " on" : ""}`, onclick: () => { S.mode = S.mode === "auto" ? "basic" : S.mode; S.colorMode = "custom"; goTo("palette"); } }, "Custom Colors"),
-          h("div", { class: "palette-line" }, "Current Palette (", h("a", { class: "link", onclick: () => { if (S.mode === "auto") S.mode = "basic"; if (S.colorMode === "unlimited") S.colorMode = "custom"; if (!S.palette.length && S.view) S.palette = S.view.palette.filter((p) => !p.source_alpha).map((p) => p.hex); goTo("palette"); } }, "change"), "):"),
+          h("button", { class: `tbtn${unlimited ? " on" : ""}`, onclick: async () => { S.mode = autoMode() ? "basic" : S.mode; S.colorMode = "unlimited"; S.palette = []; await rerun(); } }, "Unlimited Colors"),
+          h("button", { class: `tbtn${!unlimited ? " on" : ""}`, onclick: () => { S.mode = autoMode() ? "basic" : S.mode; S.colorMode = "custom"; goTo("palette"); } }, "Custom Colors"),
+          h("div", { class: "palette-line" }, "Current Palette (", h("a", { class: "link", onclick: () => { if (autoMode()) S.mode = "basic"; if (S.colorMode === "unlimited") S.colorMode = "custom"; if (!S.palette.length && S.view) S.palette = S.view.palette.filter((p) => !p.source_alpha).map((p) => p.hex); goTo("palette"); } }, "change"), "):"),
           miniPalette(S.view ? S.view.palette.filter((p) => !p.transparent).map((p) => p.hex) : [])),
         h("hr", { class: "sep" }),
         h("div", { class: "toggle-col" }, h("h4", {}, "Advanced"),
@@ -1366,7 +1377,8 @@ PAGES.batchRun = {
     const progress = h("progress", { id: "batchProgress", value: b.log.length, max: Math.max(1, b.files.length) });
     return [
       group("Settings",
-        radio("bs", [["auto", "Fully automatic (detect each image's type)"], ["current", `Current settings: ${S.info ? summary() : "Basic defaults"}`]], b.auto ? "auto" : "current", (v) => { b.auto = v === "auto"; })),
+        radio("bs", [["auto", "Fully automatic (detect each image's type)"], ["clean", "Clean lines (fully automatic, straight edges stay straight)"], ["current", `Current settings: ${S.info ? summary() : "Basic defaults"}`]],
+          b.auto ? (b.clean ? "clean" : "auto") : "current", (v) => { b.auto = v !== "current"; b.clean = v === "clean"; })),
       group("Formats", h("div", { class: "row" }, ["svg", "pdf", "eps", "ai", "dxf", "png"].map(fmt))),
       group("Output Folder",
         radio("bo", [["same", "Same folder as each image"], ["choose", b.out ? `Folder: ${b.out}` : "Choose a folder…"]], b.outMode, async (v) => {
@@ -1400,7 +1412,7 @@ async function runBatch() {
   });
   try {
     // Fully automatic: default settings, the type is detected per image.
-    const auto = { kind: "art_blended", quality: "medium", num_colors: null, palette: [], remove_background: false, advanced: {} };
+    const auto = { kind: "art_blended", quality: "medium", num_colors: null, palette: [], remove_background: false, advanced: b.clean ? { clean_lines: true } : {} };
     const settings = b.auto || !S.info ? auto : buildSettings();
     const ok = await invoke("batch", {
       paths: b.files, outDir: b.outMode === "same" ? "" : b.out, formats: b.formats, settings, options: exportOptions(), autoKind: b.auto,
@@ -1444,6 +1456,7 @@ async function nav(dir) {
 
 function resetAll() {
   S.mode = "basic";
+  S.cleanLines = false;
   store.set("mode", "basic");
   S.adv = { ...ADV_DEFAULTS };
   S.palette = [];
@@ -1533,6 +1546,7 @@ const HELP = {
     <h3>Recent Folders / Recent Images</h3><p>Quick access to what you opened before.</p>`],
   wizardMode: ["Wizard Mode", `<p>Choose how much control you want.</p>
     <h3>Fully Automatic</h3><p>Vector Free detects the image type, quality and colors and vectorizes right away. You can still improve the result on the Review page.</p>
+    <h3>Clean Lines</h3><p>Like Fully Automatic, but straight stretches of curved outlines (a side running into a rounded corner, the stem of a letter) come out as true straight lines, and the curves join them smoothly instead of wobbling around them. Best for logos, lettering and geometric artwork.</p>
     <h3>Basic</h3><p>Answer a few questions about the image: type, quality and colors. Recommended for most images.</p>
     <h3>Advanced</h3><p>Direct control over segmentation and path smoothing.</p>
     <h3>Recent Basic / Saved Advanced Settings</h3><p>Reuse settings from earlier sessions. Settings are saved from the Export Result page.</p>

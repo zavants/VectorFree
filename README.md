@@ -45,6 +45,7 @@ Typical uses:
 
 ### Tracing
 - **Fully automatic mode** – detects the image type, quality and colors by itself.
+- **Clean Lines mode** – fully automatic, and straight stretches of curved outlines (a side running into a rounded corner, the stem of a letter) become true straight lines that the curves join smoothly. Best for logos and lettering.
 - **Three image types** – photograph, artwork with blended (anti-aliased) edges, artwork without blending (pixel art).
 - **Quality / detail level** – how clean the source is (artwork) or how much detail you want (photos).
 - **Smart palettes** – automatic, two colors, custom or unlimited; suggested palettes from 2 to 40 colors; eyedropper with color blending; per-color opacity.
@@ -90,6 +91,7 @@ The window has the image on the left and the wizard on the right. **Start Page**
 | Mode | What it does |
 |---|---|
 | **Fully Automatic** | One click: Vector Free answers every question itself. You can still improve the result afterwards. |
+| **Clean Lines** | Like Fully Automatic, but straight edges stay perfectly straight instead of being traced as slightly wavy curves. Best for logos, lettering and geometric artwork. |
 | **Basic** | A few multiple-choice questions. Best for most images. |
 | **Advanced** | Direct control over segmentation and path smoothing. |
 
@@ -158,7 +160,7 @@ Vector Free first splits the image into flat-colored regions (the **segmentation
 
 Choose **Batch Processing** on the start page (or drop several files onto the window), add the images, then pick:
 
-- **Settings** – *Fully automatic* (each image is analysed separately) or the current settings.
+- **Settings** – *Fully automatic* (each image is analysed separately), *Clean lines* (the same, with straight edges kept straight) or the current settings.
 - **Formats** – any combination of SVG, PDF, EPS, AI, DXF and PNG.
 - **Output folder** – next to each image, or a folder of your choice.
 
@@ -190,6 +192,7 @@ vectorfree-cli photo.jpg -t photo -q high -f svg
 | `--scale <X>` | Scale for bitmap outputs |
 | `--dxf-splines` | DXF 2000 with splines instead of R12 polylines |
 | `--lines` | Straight segments only |
+| `--clean-lines` | Keep straight stretches of curved outlines as true lines (Clean Lines mode) |
 | `--tolerance`, `--smoothing`, `--corner`, `--min-area` | Fine-tuning |
 | `--denoise` / `--no-denoise` | Force the noise filter on or off |
 

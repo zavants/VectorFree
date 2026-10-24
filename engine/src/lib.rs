@@ -88,6 +88,9 @@ pub struct Advanced {
     pub detect_corners: Option<bool>,
     /// Use anti-aliasing to place edges with sub-pixel precision.
     pub aa_engine: Option<bool>,
+    /// Keep straight stretches inside curved outlines as true lines (a side
+    /// running into a rounded corner), with the curves tangent to them.
+    pub clean_lines: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,6 +146,8 @@ pub struct Params {
     pub snap_edges: bool,
     /// Assign anti-aliasing blend colors to the two colors they mix.
     pub blend_aware: bool,
+    /// Keep straight stretches inside curved outlines as true lines.
+    pub clean_lines: bool,
 }
 
 impl Settings {
@@ -192,6 +197,7 @@ impl Settings {
             merge_by_color: self.kind == ImageKind::Photo,
             snap_edges: self.aa_engine(),
             blend_aware: self.kind != ImageKind::Photo && adv.aa_rejection != Some(AaRejection::None),
+            clean_lines: adv.clean_lines,
         }
     }
 

@@ -2,6 +2,12 @@
 
 All notable changes to Vector Free are listed here. Versions follow [semantic versioning](https://semver.org); downloads are on the [releases page](https://github.com/zavants/VectorFree/releases).
 
+## [Unreleased]
+
+### Added
+- **Clean Lines** mode on the Wizard Mode page (and in batch processing): fully automatic like *Fully Automatic*, but straight stretches of curved outlines, such as a side running into a rounded corner or the stem of a letter, are traced as true straight lines, and the curves between them join them smoothly instead of wobbling around them. The other modes are unchanged.
+- Command-line option `--clean-lines`.
+
 ## [0.4.1] - 2026-10-19
 
 ### Changed

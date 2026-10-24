@@ -26,6 +26,7 @@ OPTIONS:
 
 ADVANCED:
       --lines              Straight segments only (no curves)
+      --clean-lines        Keep straight stretches of curved outlines as true lines
       --tolerance <PX>     Max curve fitting error in pixels
       --smoothing <X>      Smoothing strength, 0..4 (default 1)
       --corner <DEG>       Corner angle threshold, 60..175 (default 120)
@@ -107,6 +108,7 @@ fn main() {
             "--scale" => opts.raster_scale = val().parse().unwrap_or_else(|_| fail("bad --scale")),
             "--dxf-splines" => opts.dxf_splines = true,
             "--lines" => settings.advanced.curves = CurveMode::Lines,
+            "--clean-lines" => settings.advanced.clean_lines = true,
             "--tolerance" => settings.advanced.tolerance = Some(val().parse().unwrap_or_else(|_| fail("bad --tolerance"))),
             "--smoothing" => settings.advanced.smoothing = Some(val().parse().unwrap_or_else(|_| fail("bad --smoothing"))),
             "--corner" => settings.advanced.corner_angle = Some(val().parse().unwrap_or_else(|_| fail("bad --corner"))),

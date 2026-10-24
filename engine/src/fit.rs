@@ -130,11 +130,23 @@ fn fit_polyline(grid: &[Pt], chain: &Chain, p: &Params, snapper: Option<&Snapper
     // edges; on small images the fitting tolerance drops below that and a
     // straight side would be fitted as a chain of wobbly cubics.
     let straight_tol = (p.fit_tolerance * 0.75).max(if snapper.is_some() { 0.15 * p.corner_span as f64 / 4.0 } else { 0.0 });
+    let runs = if p.clean_lines && p.curves == CurveMode::Curves {
+        let mut sharp = vec![false; m];
+        for &c in &corners {
+            sharp[c] = true;
+        }
+        sharp[m - 1] = closed && !closed_smooth;
+        place_lines(&mut pts, &mut breaks, &sharp, closed, closed_smooth, &line_tol(p, straight_tol))
+    } else {
+        Vec::new()
+    };
+    let run_from = |i: usize| runs.iter().find(|r| r.0 == i).copied();
+    let run_to = |i: usize| runs.iter().find(|r| r.1 == i).copied();
     let mut segs = Vec::new();
     for w in breaks.windows(2) {
         let (a, b) = (w[0], w[1]);
         let d = &pts[a..=b];
-        if d.len() <= 2 || is_straight(d, straight_tol) {
+        if d.len() <= 2 || run_from(a) == Some((a, b)) || is_straight(d, straight_tol) {
             segs.push(Seg::Line(d[d.len() - 1]));
             continue;
         }
@@ -142,17 +154,287 @@ fn fit_polyline(grid: &[Pt], chain: &Chain, p: &Params, snapper: Option<&Snapper
             simplify_lines(d, p.fit_tolerance, &mut segs);
             continue;
         }
-        let (t1, t2) = if closed_smooth {
-            let t = pts[1].sub(pts[m - 2]).norm();
-            (t, t.scale(-1.0))
-        } else {
-            (left_tangent(d), right_tangent(d))
-        };
+        let seam = pts[1].sub(pts[m - 2]).norm();
+        let mut t1 = if closed_smooth && a == 0 { seam } else { left_tangent(d) };
+        let mut t2 = if closed_smooth && b == m - 1 { seam.scale(-1.0) } else { right_tangent(d) };
+        // Curves leave and enter straight stretches along them.
+        if let Some((s, _)) = run_to(a) {
+            t1 = pts[a].sub(pts[s]).norm();
+        }
+        let next = if closed_smooth && b == m - 1 { 0 } else { b };
+        if let Some((_, e)) = run_from(next) {
+            t2 = pts[next].sub(pts[e]).norm();
+        }
         let from = segs.len();
         fit_cubic(d, 0, d.len() - 1, t1, t2, tol2, &mut segs, 0);
         straighten(&mut segs[from..], d[0], p.fit_tolerance * 0.08);
     }
     (pts[0], segs)
+}
+
+/// Thresholds for straight stretches, in segmentation pixels.
+struct LineTol {
+    /// Largest distance of a point from the line.
+    tol: f64,
+    /// Largest sagitta of a parabola through the points: a gentle arc stays
+    /// within `tol` over a short length, but bends measurably.
+    sag: f64,
+    min_len: f64,
+    /// Stretches this close to each other or to a section end touch it.
+    gap: f64,
+    /// A stretch also reaches a section end through a short remainder that
+    /// is this straight with it (corners left a little rounded).
+    reach: f64,
+}
+
+fn line_tol(p: &Params, straight_tol: f64) -> LineTol {
+    let up = p.corner_span as f64 / 4.0;
+    let tol = (0.6 * p.fit_tolerance).max(0.2 * up);
+    LineTol { tol, sag: 0.4 * tol, min_len: 6.0 * up, gap: 1.5 * up, reach: straight_tol }
+}
+
+/// Clean-lines mode: find the straight stretches of the sections between
+/// `breaks`, move their end points onto their fitted lines and add them to
+/// `breaks`. Chain ends stay put; a corner (`sharp`) moves only to where the
+/// stretches on both sides of it meet. A closed loop without corners is first
+/// rotated to start at a straight stretch, so the seam does not cut one in
+/// two. Returns the stretches as (first, last) point indices.
+fn place_lines(pts: &mut Vec<Pt>, breaks: &mut Vec<usize>, sharp: &[bool], closed: bool, closed_smooth: bool, lt: &LineTol) -> Vec<(usize, usize)> {
+    let m = pts.len();
+    if closed_smooth {
+        let found = straight_runs(pts, lt, (false, false));
+        if let Some(&(s, _, _)) = found.iter().filter(|r| r.0 > 0).max_by_key(|r| r.1 - r.0) {
+            let mut v: Vec<Pt> = pts[s..m - 1].iter().chain(&pts[..s]).copied().collect();
+            v.push(v[0]);
+            *pts = v;
+        }
+    }
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    let mut lines: Vec<Line> = Vec::new();
+    for w in breaks.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        if b - a < 2 {
+            continue;
+        }
+        let d = &pts[a..=b];
+        let found = if is_straight(d, lt.reach) { fit_line(d).map(|l| (0, b - a, l)).into_iter().collect() } else { straight_runs(d, lt, (sharp[a], sharp[b])) };
+        for (s, e, line) in found {
+            let (s, e) = (a + s, a + e);
+            let (c, dir, _) = line;
+            for i in [s, e] {
+                let end = (i == a || i == b) && !closed_smooth;
+                if end && !sharp[i] {
+                    continue;
+                }
+                // Two stretches meeting at one point (also across the seam
+                // of a loop) meet at their intersection.
+                let other = match (runs.last(), runs.first()) {
+                    (Some(&(_, pe)), _) if pe == i => lines.last(),
+                    (_, Some(&(0, _))) if closed && i == m - 1 => lines.first(),
+                    _ => None,
+                };
+                let q = match other {
+                    Some(&(pc, pd, _)) => match intersect(pc, pd, c, dir) {
+                        Some(x) if x.dist(pts[i]) <= 2.0 * lt.gap => x,
+                        _ => pts[i],
+                    },
+                    None if end => continue,
+                    None => c.add(dir.scale(pts[i].sub(c).dot(dir))),
+                };
+                pts[i] = q;
+                if closed && (i == 0 || i == m - 1) {
+                    pts[0] = q;
+                    pts[m - 1] = q;
+                }
+            }
+            runs.push((s, e));
+            lines.push(line);
+        }
+    }
+    breaks.extend(runs.iter().flat_map(|&(s, e)| [s, e]));
+    breaks.sort_unstable();
+    breaks.dedup();
+    runs
+}
+
+/// Straight stretches of an open polyline as (first, last, line), found
+/// greedily from the start: each one is the longest run from the first point
+/// where a long, unbent one starts. `corners`: whether the polyline starts
+/// and ends at a corner.
+fn straight_runs(d: &[Pt], lt: &LineTol, corners: (bool, bool)) -> Vec<(usize, usize, Line)> {
+    let n = d.len();
+    let within = |i: usize, j: usize| fit_within(&d[i..=j], lt.tol).is_some();
+    let mut runs: Vec<(usize, usize, Line)> = Vec::new();
+    let mut i = 0;
+    // Gallop, then bisect, to the end of the longest run from i within
+    // tolerance.
+    let longest = |i: usize| {
+        let (mut good, mut step) = (i + 1, 1);
+        while good + step < n && within(i, good + step) {
+            good += step;
+            step *= 2;
+        }
+        let mut bad = (good + step).min(n);
+        while bad - good > 1 {
+            let mid = (good + bad) / 2;
+            if within(i, mid) {
+                good = mid;
+            } else {
+                bad = mid;
+            }
+        }
+        good
+    };
+    // Whether a run reaches the section's start and end.
+    let reaches = |r: &(usize, usize, Line)| {
+        let near = |a: usize, b: usize| d[a].dist(d[b]) <= lt.gap || (d[a].dist(d[b]) < lt.min_len && is_straight(&d[r.0.min(a)..=r.1.max(b)], lt.reach));
+        (near(0, r.0), near(r.1, n - 1))
+    };
+    while i + 2 < n {
+        let mut run = trim_run(d, i, longest(i), lt);
+        // A curved tail at the start also cut the run short: extend it again
+        // from where the line really starts.
+        let mut from = i;
+        while let Some((s, _, _)) = run {
+            if s <= from {
+                break;
+            }
+            from = s;
+            run = trim_run(d, s, longest(s), lt);
+        }
+        match run.filter(|r| {
+            let (rs, re) = reaches(r);
+            (rs && re) || sharp_ends(d, r, lt, (rs, re), corners)
+        }) {
+            Some(r) => {
+                i = r.1.max(i + 1);
+                runs.push(r);
+            }
+            None => i += 1,
+        }
+    }
+    // Neighbouring runs that are together still straight are one line.
+    let mut k = 1;
+    while k < runs.len() {
+        let (s, e) = (runs[k - 1].0, runs[k].1);
+        let joined = (d[runs[k - 1].1].dist(d[runs[k].0]) <= lt.gap).then(|| fit_within(&d[s..=e], lt.tol)).flatten();
+        match joined {
+            Some(line) if sagitta(&d[s..=e], line) <= lt.sag => {
+                runs[k - 1] = (s, e, line);
+                runs.remove(k);
+            }
+            _ => k += 1,
+        }
+    }
+    // A stretch ending just short of a corner or chain end reaches it.
+    if let Some(&r) = runs.first() {
+        if reaches(&r).0 {
+            runs[0].0 = 0;
+        }
+    }
+    if let Some(&r) = runs.last() {
+        if reaches(&r).1 {
+            runs.last_mut().unwrap().1 = n - 1;
+        }
+    }
+    runs
+}
+
+/// Whether the outline turns away from a straight run sharply enough at one
+/// of its ends that does not `reach` the section end. A short piece of a
+/// large arc is as straight as a line, but the arc keeps bending at the same
+/// rate beyond it: within one run length it turns by at most about
+/// 9 tol / len (radians), as the run is the longest within tolerance. A line
+/// meeting a tighter curve, another line at an angle or a corner (`corners`
+/// at the section ends) within that length turns much more. A run that
+/// reaches a corner does not count that corner: an arc may start at one too.
+fn sharp_ends(d: &[Pt], &(s, e, (_, dir, _)): &(usize, usize, Line), lt: &LineTol, reach: (bool, bool), corners: (bool, bool)) -> bool {
+    let len = d[s].dist(d[e]);
+    let need = 24.0 * lt.tol / len;
+    let n = d.len();
+    // Chord over the next run length past `from`, stepping by `step`.
+    let turn = |from: usize, step: isize, out: Pt, corner: bool| {
+        let mut j = from as isize;
+        while (0..n as isize).contains(&(j + step)) && d[j as usize].dist(d[from]) < len {
+            j += step;
+        }
+        if corner && d[j as usize].dist(d[from]) < len {
+            return true;
+        }
+        let chord = d[j as usize].sub(d[from]);
+        chord.len() >= lt.gap && chord.norm().dot(out).clamp(-1.0, 1.0).acos() >= need
+    };
+    let fwd = if d[e].sub(d[s]).dot(dir) < 0.0 { dir.scale(-1.0) } else { dir };
+    (!reach.1 && turn(e, 1, fwd, corners.1)) || (!reach.0 && turn(s, -1, fwd.scale(-1.0), corners.0))
+}
+
+/// A run within tolerance may reach a little way into the curves at either
+/// end: cut those tails off, then keep the run if it is long and unbent.
+fn trim_run(d: &[Pt], mut s: usize, mut e: usize, lt: &LineTol) -> Option<(usize, usize, Line)> {
+    // Judge the ends against the middle half, which the tails do not tilt.
+    let q = (e - s) / 4;
+    let (c, dir, rms) = fit_line(&d[s + q..=e - q])?;
+    let nrm = Pt::new(-dir.y, dir.x);
+    // Cut where a point leaves the noise band of the line.
+    let thr = (3.0 * rms).clamp(0.15 * lt.tol, 0.5 * lt.tol);
+    while s < e && d[s].sub(c).dot(nrm).abs() > thr {
+        s += 1;
+    }
+    while e > s && d[e].sub(c).dot(nrm).abs() > thr {
+        e -= 1;
+    }
+    if d[s].dist(d[e]) < lt.min_len {
+        return None;
+    }
+    let line = fit_line(&d[s..=e])?;
+    (sagitta(&d[s..=e], line) <= lt.sag).then_some((s, e, line))
+}
+
+/// Least-squares line through `d` if every point is within `tol` of it.
+fn fit_within(d: &[Pt], tol: f64) -> Option<Line> {
+    let line = fit_line(d)?;
+    let (c, dir, _) = line;
+    let nrm = Pt::new(-dir.y, dir.x);
+    d.iter().all(|p| p.sub(c).dot(nrm).abs() <= tol).then_some(line)
+}
+
+/// How far points near a line bend: the sagitta of the least-squares
+/// parabola through them, in the line's frame. Noise along a straight edge
+/// averages out; a gentle arc does not.
+fn sagitta(d: &[Pt], (c, dir, _): Line) -> f64 {
+    if d.len() < 4 {
+        return 0.0;
+    }
+    let nrm = Pt::new(-dir.y, dir.x);
+    // Normal equations of v = k2 u^2 + k1 u + k0.
+    let mut s = [0.0f64; 5];
+    let mut t = [0.0f64; 3];
+    let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+    for p in d {
+        let q = p.sub(c);
+        let (u, v) = (q.dot(dir), q.dot(nrm));
+        lo = lo.min(u);
+        hi = hi.max(u);
+        let mut up = 1.0;
+        for k in 0..5 {
+            s[k] += up;
+            if k < 3 {
+                t[k] += up * v;
+            }
+            up *= u;
+        }
+    }
+    let det3 = |a: [[f64; 3]; 3]| {
+        a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1]) - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+            + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0])
+    };
+    let det = det3([[s[4], s[3], s[2]], [s[3], s[2], s[1]], [s[2], s[1], s[0]]]);
+    if det.abs() < 1e-12 {
+        return 0.0;
+    }
+    let k2 = det3([[t[2], s[3], s[2]], [t[1], s[2], s[1]], [t[0], s[1], s[0]]]) / det;
+    let half = (hi - lo) / 2.0;
+    (k2 * half * half).abs()
 }
 
 /// Replace cubics whose control points lie on their chord by true lines:

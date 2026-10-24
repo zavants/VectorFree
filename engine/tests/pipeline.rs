@@ -424,3 +424,133 @@ fn aa_diagonal_edges_stay_straight() {
         }
     }
 }
+
+/// Signed distance to a box centred at (cx, cy) with half size (hx, hy) whose
+/// top corners have radius `rt` and bottom corners radius `rb` (negative inside).
+fn round_box(p: engine::Pt, (cx, cy, hx, hy): (f64, f64, f64, f64), rt: f64, rb: f64) -> f64 {
+    let r = if p.y < cy { rt } else { rb };
+    let (qx, qy) = ((p.x - cx).abs() - hx + r, (p.y - cy).abs() - hy + r);
+    qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - r
+}
+
+/// Anti-aliased dark shape from a signed distance, on a light or a
+/// transparent background.
+fn aa_shape(w: u32, h: u32, transparent: bool, sdf: &dyn Fn(engine::Pt) -> f64) -> image::RgbaImage {
+    let (fg, bg) = ([30.0, 40.0, 110.0], [245.0, 242.0, 230.0]);
+    image::RgbaImage::from_fn(w, h, |x, y| {
+        let n = 8;
+        let mut cov = 0.0;
+        for sy in 0..n {
+            for sx in 0..n {
+                if sdf(engine::Pt::new(x as f64 + (sx as f64 + 0.5) / n as f64, y as f64 + (sy as f64 + 0.5) / n as f64)) < 0.0 {
+                    cov += 1.0 / (n * n) as f64;
+                }
+            }
+        }
+        if transparent {
+            return image::Rgba([fg[0] as u8, fg[1] as u8, fg[2] as u8, (255.0 * cov).round() as u8]);
+        }
+        let c: Vec<u8> = (0..3).map(|k| (fg[k] * cov + bg[k] * (1.0 - cov)).round() as u8).collect();
+        image::Rgba([c[0], c[1], c[2], 255])
+    })
+}
+
+/// Outline of the dark shape as (start point, segment) pairs.
+fn dark_outline(img: &image::RgbaImage, settings: &Settings) -> Vec<(engine::Pt, engine::Seg)> {
+    let vec = vectorize(&segment_image(img, settings), settings);
+    let shape = vec.shapes.iter().find(|sh| sh.rgb[2] as i32 > sh.rgb[0] as i32 + 40).expect("dark shape");
+    let outline = &shape.outers[0];
+    let mut segs = Vec::new();
+    let mut prev = outline.start;
+    for g in &outline.segs {
+        segs.push((prev, *g));
+        prev = g.end();
+    }
+    segs
+}
+
+fn seg_at(p: engine::Pt, g: &engine::Seg, t: f64) -> engine::Pt {
+    match *g {
+        engine::Seg::Line(e) => p.add(e.sub(p).scale(t)),
+        engine::Seg::Cubic(a, b, e) => engine::geom::bezier(p, a, b, e, t),
+    }
+}
+
+fn clean_lines(quality: engine::Quality) -> Settings {
+    let mut s = Settings { kind: ImageKind::ArtBlended, quality, ..Settings::default() };
+    s.advanced.clean_lines = true;
+    s
+}
+
+/// Clean-lines mode: a straight side that runs into a rounded corner is one
+/// true line, not a cubic that wobbles around it.
+#[test]
+fn clean_lines_keeps_straight_sides_of_rounded_shapes() {
+    // (half size, top radius, bottom radius): rounded rectangle, capsule, and
+    // tabs with rounded top and sharp bottom corners.
+    let shapes = [((70.0, 35.0), 12.0, 12.0), ((70.0, 20.0), 20.0, 20.0), ((70.0, 35.0), 15.0, 0.0), ((70.0, 35.0), 30.0, 0.0)];
+    let c = engine::Pt::new(110.0, 80.0);
+    for (half, rt, rb) in shapes {
+        for deg in [0.0f64, 7.0, 30.0] {
+            for transparent in [false, true] {
+                for q in [engine::Quality::High, engine::Quality::Medium] {
+                    let (sn, cs) = deg.to_radians().sin_cos();
+                    // Local (unrotated) frame <-> image.
+                    let to_local = |p: engine::Pt| {
+                        let d = p.sub(c);
+                        engine::Pt::new(d.x * cs + d.y * sn, -d.x * sn + d.y * cs)
+                    };
+                    let to_img = |x: f64, y: f64| c.add(engine::Pt::new(x * cs - y * sn, x * sn + y * cs));
+                    let sdf = |p: engine::Pt| round_box(to_local(p), (0.0, 0.0, half.0, half.1), rt, rb);
+                    let segs = dark_outline(&aa_shape(220, 160, transparent, &sdf), &clean_lines(q));
+                    let what = format!("half {half:?} r{rt}/{rb} {deg}deg transparent {transparent} {q:?}");
+                    let (hx, hy) = half;
+                    // Straight parts of the four sides, without the corner arcs.
+                    let sides = [
+                        (to_img(-hx + rt, -hy), to_img(hx - rt, -hy)),
+                        (to_img(-hx + rb, hy), to_img(hx - rb, hy)),
+                        (to_img(-hx, -hy + rt), to_img(-hx, hy - rb)),
+                        (to_img(hx, -hy + rt), to_img(hx, hy - rb)),
+                    ];
+                    for (i, &(a, b)) in sides.iter().enumerate() {
+                        if a.dist(b) < 1.0 {
+                            continue;
+                        }
+                        let ab = b.sub(a);
+                        let along = |p: engine::Pt| p.sub(a).dot(ab) / ab.dot(ab);
+                        let off = |p: engine::Pt| (ab.x * p.sub(a).y - ab.y * p.sub(a).x).abs() / ab.len();
+                        let on: Vec<_> = segs.iter().filter(|(p, g)| {
+                            let m = seg_at(*p, g, 0.5);
+                            off(m) < 1.0 && (0.05..=0.95).contains(&along(m))
+                        }).collect();
+                        assert!(on.len() == 1 && matches!(on[0].1, engine::Seg::Line(_)), "{what} side {i}: {on:?}");
+                        let (p, g) = on[0];
+                        let covered = along(*p).max(along(g.end())).min(1.0) - along(*p).min(along(g.end())).max(0.0);
+                        assert!(covered > 0.9, "{what} side {i}: line covers {covered:.2} of the side");
+                        let dev = off(*p).max(off(g.end()));
+                        assert!(dev < 0.15, "{what} side {i}: line is {dev:.3}px off the side");
+                        // At a sharp (bottom) corner the line runs right into it.
+                        for (sharp, end) in [(i == 1, along(*p).min(along(g.end()))), (i != 0, 1.0 - along(*p).max(along(g.end())))] {
+                            assert!(!(sharp && rb == 0.0) || end.abs() * ab.len() < 0.5, "{what} side {i}: line stops {:.2}px short of the corner", end * ab.len());
+                        }
+                    }
+                    let worst = segs.iter().flat_map(|(p, g)| (0..=20).map(move |k| sdf(seg_at(*p, g, k as f64 / 20.0)).abs())).fold(0.0, f64::max);
+                    assert!(worst < 0.35, "{what}: outline deviates {worst:.3}px");
+                }
+            }
+        }
+    }
+}
+
+/// Clean-lines mode must not turn round shapes into polygons.
+#[test]
+fn clean_lines_keeps_circles_round() {
+    for r in [15.0, 45.0, 110.0] {
+        let size = (2.0 * r + 30.0) as u32;
+        let c = size as f64 / 2.0;
+        let sdf = |p: engine::Pt| p.dist(engine::Pt::new(c, c)) - r;
+        let segs = dark_outline(&aa_shape(size, size, false, &sdf), &clean_lines(engine::Quality::High));
+        let lines = segs.iter().filter(|(_, g)| matches!(g, engine::Seg::Line(_))).count();
+        assert_eq!(lines, 0, "radius {r}: {lines} straight segments in {segs:?}");
+    }
+}
