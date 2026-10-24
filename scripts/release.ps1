@@ -32,6 +32,12 @@ function Run($what, [scriptblock] $cmd) {
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Version must look like 1.2.3" }
 if (-not (Test-Path $KeyPath)) { throw "Signing key not found: $KeyPath" }
 $notesText = (Get-Content $Notes -Raw).Trim()
+# The app's update dialog shows the notes as plain text, so latest.json gets
+# them without Markdown markup (the GitHub release page keeps the Markdown).
+$bullet = '$1' + [char]0x2022 + ' '
+$plainNotes = (($notesText -split "`r?`n") | ForEach-Object {
+    $_ -replace '^\s*#+\s*', '' -replace '^(\s*)[-*]\s+', $bullet -replace '\*\*(.+?)\*\*', '$1' -replace '\*([^*\s][^*]*?)\*', '$1' -replace '`([^`]+)`', '$1'
+}) -join "`n"
 if (-not $NoPublish -and (git status --porcelain)) { throw "Working tree is not clean; commit first." }
 
 # ---- version bump
@@ -80,7 +86,7 @@ Compress-Archive -Path $stage -DestinationPath "$dist\$zipName"
 
 $manifest = [ordered]@{
     version   = $Version
-    notes     = $notesText
+    notes     = $plainNotes
     pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     platforms = [ordered]@{
         "windows-x86_64" = [ordered]@{
