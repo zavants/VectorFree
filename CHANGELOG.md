@@ -2,7 +2,7 @@
 
 All notable changes to Vector Free are listed here. Versions follow [semantic versioning](https://semver.org); downloads are on the [releases page](https://github.com/zavants/VectorFree/releases).
 
-## [Unreleased]
+## [0.5.0] - 2026-10-24
 
 ### Added
 - **Clean Lines** mode on the Wizard Mode page (and in batch processing): fully automatic like *Fully Automatic*, but straight stretches of curved outlines, such as a side running into a rounded corner or the stem of a letter, are traced as true straight lines, and the curves between them join them smoothly instead of wobbling around them. The other modes are unchanged.
@@ -65,6 +65,7 @@ Not published as a release.
 - Advanced settings, lines-only output, denoise filter.
 - Export to GIF and DXF 2000 splines; crop, paste from clipboard, copy SVG; batch cancel.
 
+[0.5.0]: https://github.com/zavants/VectorFree/releases/tag/v0.5.0
 [0.4.1]: https://github.com/zavants/VectorFree/releases/tag/v0.4.1
 [0.4.0]: https://github.com/zavants/VectorFree/releases/tag/v0.4.0
 [0.3.2]: https://github.com/zavants/VectorFree/releases/tag/v0.3.2
