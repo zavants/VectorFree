@@ -4280,7 +4280,7 @@ dependencies = [
 
 [[package]]
 name = "vectorfree-app"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "base64 0.22.1",
  "image",
@@ -4297,14 +4297,14 @@ dependencies = [
 
 [[package]]
 name = "vectorfree-cli"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "vectorfree-engine",
 ]
 
 [[package]]
 name = "vectorfree-engine"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "image",
  "serde",
