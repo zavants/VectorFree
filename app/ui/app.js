@@ -1538,69 +1538,158 @@ for (const b of document.querySelectorAll("#moreMenu button")) {
 
 // ---------------------------------------------------------------- contextual help
 const HELP = {
-  load: ["Load Image", `<p>Start by loading the bitmap you want to vectorize.</p>
-    <h3>Import from Folder</h3><p>Opens a file dialog. PNG, JPG, GIF, BMP, TIFF, WebP and ICO are supported. Shortcut <kbd>Ctrl</kbd>+<kbd>O</kbd>.</p>
-    <h3>Paste from Clipboard</h3><p>Copy an image in another program (for example a screenshot) and press <kbd>Ctrl</kbd>+<kbd>V</kbd>.</p>
-    <h3>Drag and drop</h3><p>Drop an image file onto the window, or onto the program icon.</p>
-    <h3>Batch Processing</h3><p>Vectorize many images with the same settings.</p>
-    <h3>Recent Folders / Recent Images</h3><p>Quick access to what you opened before.</p>`],
-  wizardMode: ["Wizard Mode", `<p>Choose how much control you want.</p>
-    <h3>Fully Automatic</h3><p>Vector Free detects the image type, quality and colors and vectorizes right away. You can still improve the result on the Review page.</p>
-    <h3>Clean Lines</h3><p>Like Fully Automatic, but straight stretches of curved outlines (a side running into a rounded corner, the stem of a letter) come out as true straight lines, and the curves join them smoothly instead of wobbling around them. Best for logos, lettering and geometric artwork.</p>
-    <h3>Basic</h3><p>Answer a few questions about the image: type, quality and colors. Recommended for most images.</p>
-    <h3>Advanced</h3><p>Direct control over segmentation and path smoothing.</p>
-    <h3>Recent Basic / Saved Advanced Settings</h3><p>Reuse settings from earlier sessions. Settings are saved from the Export Result page.</p>
-    <h3>Crop Image</h3><p>Trace only part of the image.</p>`],
-  imageType: ["Image Type", `<p>Tell Vector Free what kind of picture this is; it changes how edges are interpreted.</p>
-    <h3>Photograph</h3><p>Taken with a camera, or detailed artwork with soft gradients.</p>
-    <h3>Artwork with Blended Edges</h3><p>Logos and drawings whose edge pixels mix the two neighbouring colors (anti-aliasing). Vector Free uses those mixed pixels to place edges with sub-pixel precision.</p>
-    <h3>Artwork without Blended Edges</h3><p>Pixel art and aliased graphics with hard pixel steps. Zoom in on an edge: if you see only the two flat colors, choose this.</p>`],
-  quality: ["Input Quality / Detail Level", `<p>For artwork: how clean the source is (not its resolution). Higher quality keeps finer detail; lower quality rejects more noise and blur.</p>
-    <p>For photographs: how much detail you want in the result. Low gives fewer, smoother shapes; High gives a faithful but larger result.</p>`],
-  colorMode: ["Color Mode", `<h3>Two Colors</h3><p>Only two colors, e.g. black and white.</p>
-    <h3>Custom Colors</h3><p>You review a suggested palette and the result uses only those colors. Best for logos with up to about 12 colors.</p>
-    <h3>Unlimited Colors</h3><p>Uses as many colors as needed. Good for gradients and photos.</p>`],
+  load: ["Load Image", `<p>Start by loading the bitmap you want to turn into vectors.</p>
+    <h3>Ways to open an image</h3>
+    <ul>
+      <li><b>Import from Folder</b> (<kbd>Ctrl</kbd>+<kbd>O</kbd>): PNG, JPG, GIF, BMP, TIFF, WebP and ICO.</li>
+      <li><b>Paste from Clipboard</b> (<kbd>Ctrl</kbd>+<kbd>V</kbd>): copy an image or a screenshot in another program first.</li>
+      <li><b>Drag and drop</b> a file onto the window, or onto the program icon.</li>
+      <li><b>Recent Folders / Recent Images</b> reopen what you used before.</li>
+      <li><b>Batch Processing</b> traces many images in one go.</li>
+    </ul>
+    <h3>Get the best result</h3>
+    <ul>
+      <li>Use the largest, original version of the image you have. A logo copied from a website is often tiny; look for the original file.</li>
+      <li>PNG is better than JPEG: JPEG compression adds blotches around edges that can end up as extra shapes.</li>
+      <li>Do not enlarge or sharpen the image yourself: Vector Free already uses the soft edge pixels to place edges precisely.</li>
+      <li>Very large images trace faster if you only need part of them: use <b>Crop Image</b> on the next page.</li>
+    </ul>`],
+  wizardMode: ["Wizard Mode", `<p>Choose how much control you want. You can always go back and try another mode.</p>
+    <table class="terms">
+      <tr><td><b>Fully Automatic</b></td><td>One click. Vector Free detects the image type, quality and colors. A good first try for any image.</td></tr>
+      <tr><td><b>Clean Lines</b></td><td>Like Fully Automatic, but straight edges stay perfectly straight and the curves join them smoothly. Best for logos, lettering and geometric artwork.</td></tr>
+      <tr><td><b>Basic</b></td><td>A few multiple-choice questions: image type, quality and colors. Best when you want to choose the palette.</td></tr>
+      <tr><td><b>Advanced</b></td><td>Direct control over segmentation and path smoothing.</td></tr>
+    </table>
+    <div class="tip"><b>Tip:</b> if the straight sides of a logo or the stems of letters look slightly wavy, trace it again with <b>Clean Lines</b>.</div>
+    <h3>Recent Basic / Saved Advanced Settings</h3><p>Reuse settings from earlier sessions. Name and save settings on the Export Result page.</p>
+    <h3>Crop Image</h3><p>Trace only part of the image: drag a rectangle over the area you want and press <b>Crop</b>.</p>`],
+  imageType: ["Image Type", `<p>Tell Vector Free what kind of picture this is; it changes how edges are read. The recommended answer is marked.</p>
+    <h3>Photograph</h3><p>Taken with a camera, or detailed artwork with soft gradients and shading. The result is a poster-like image made of flat color areas.</p>
+    <h3>Artwork with Blended Edges</h3><p>Logos, drawings, icons and lettering whose edge pixels mix the two neighbouring colors (anti-aliasing). This is the most common type. Vector Free uses those mixed pixels to place each edge between pixels.</p>
+    <h3>Artwork without Blended Edges</h3><p>Pixel art and aliased graphics with hard pixel steps.</p>
+    <div class="tip"><b>How to tell:</b> zoom in on an edge (mouse wheel). If you see in-between shades, choose <i>Blended Edges</i>; if you see only the two flat colors, choose <i>without Blended Edges</i>.</div>`],
+  quality: ["Input Quality / Detail Level", `<h3>For artwork: Input Quality</h3><p>How clean the source is, not how big it is.</p>
+    <ul>
+      <li><b>High</b>: sharp, clean images such as exported PNG logos.</li>
+      <li><b>Medium</b>: some JPEG artifacts or slight blur.</li>
+      <li><b>Low</b>: blurry, noisy or heavily compressed images, and scans.</li>
+    </ul>
+    <h3>For photographs: Detail Level</h3><p><b>Low</b> gives fewer, smoother shapes (a simplified, cartoon-like look); <b>High</b> stays close to the photo but makes a much larger file.</p>
+    <div class="tip"><b>Tip:</b> if the result shows small specks or ragged edges, try one step lower.</div>`],
+  colorMode: ["Color Mode", `<h3>Two Colors</h3><p>Exactly two colors, for example black and white: signatures, stamps, line art and cutting files.</p>
+    <h3>Custom Colors</h3><p>You review a suggested palette and the result uses only those colors. Best for logos with up to about 12 colors, and when the exact colors matter.</p>
+    <h3>Unlimited Colors</h3><p>Uses as many colors as needed. Good for gradients, shading and photos.</p>`],
   palette: ["Palette Selection", `<h3>Suggested Palettes</h3><p>Palettes with an increasing number of colors. The recommended one is marked with ▶▶. Click (or double click) to choose; <b>Add Additional Palette</b> offers one with more colors.</p>
-    <h3>Custom Palette</h3><p>Select a color, then click in the image to replace it with the color under the cursor. <kbd>Ctrl</kbd>-click blends the clicked color with the current one. <b>+</b> adds a color, <b>✕</b> removes the selected one.</p>`],
-  review: ["Review Result", `<p>Check the result: flip between <b>Bitmap (B)</b> and <b>Vector (V)</b>, zoom with the mouse wheel and tick <b>Paths</b> to see the outlines and nodes.</p>
-    <h3>Improve Result</h3><p><b>Detail Level</b> and <b>Colors</b> re-run the vectorization. <b>Current Palette (change)</b> opens the palette page.</p>
-    <h3>Advanced</h3><p><b>Remove Background</b> deletes shapes, <b>Edit Result</b> fixes the segmentation by hand and <b>Hand-pick Settings</b> goes back to the questions.</p>`],
-  editSeg: ["Edit Segmentation", `<p>Tools (keyboard shortcut in brackets):</p>
-    <p><b>Undo (Z)</b>, <b>Redo (Y)</b>, <b>Revert (T)</b> — step through or discard your edits.</p>
-    <p><b>Pan (A)</b> — move the view. Hold <kbd>Shift</kbd> to pan with any tool.</p>
-    <p><b>Zap (D)</b> — drag to dissolve pixels into the surrounding regions; click to dissolve a whole region.</p>
-    <p><b>Fill (F)</b> — give a whole region the current color.</p>
-    <p><b>Pencil (X)</b> — paint pixels with the current color. The size slider sets the brush.</p>
-    <p><b>Color (C)</b> — click a region to make its color the current color. Clicking the color swatch cycles through the palette.</p>
-    <h3>Problem Finder</h3><p>Marks pinch points; use ◀ ▶ to visit them.</p>`],
-  removeBg: ["Remove Background", `<p><b>Erase (D)</b>: click shapes to remove them from the result; click again to restore. Removed shapes show a red dotted outline and are not exported.</p>
-    <p>Tick <b>Erase all shapes of the clicked color</b> to remove a color everywhere at once.</p>
-    <p><b>Pan (A)</b> or hold <kbd>Shift</kbd> to move the view.</p>`],
-  advSegmentation: ["Image Segmentation", `<h3>Complexity</h3><p>How many color segments the image is split into.</p>
-    <h3>Minimum Number of Pixels</h3><p>Regions smaller than this are merged into a neighbour. 0 lets Vector Free decide.</p>
-    <h3>Anti-Aliasing Artifact Rejection</h3><p>Removes the thin in-between segments anti-aliasing can leave along edges.</p>
-    <h3>Noise Filter</h3><p>Pre-filters JPEG artifacts and noise.</p>
-    <h3>Auto-Update</h3><p>Re-segment automatically after every change.</p>`],
-  advSmoothing: ["Path Smoothing", `<h3>Smoothness</h3><p>How strongly the pixel staircase is smoothed before curves are fitted.</p>
-    <h3>Detect Sharp Corners</h3><p>Keeps corners crisp; turn off for organic shapes.</p>
-    <h3>Anti-Aliasing Engine</h3><p>Uses blended edge pixels to locate edges between pixels.</p>
+    <h3>Build your own palette</h3>
+    <ol>
+      <li>Select a color swatch.</li>
+      <li>Click in the image to replace it with the color under the cursor. <kbd>Ctrl</kbd>-click blends the clicked color with the current one.</li>
+      <li><b>+</b> adds a color, <b>✕</b> removes the selected one, and the color box edits the selected color exactly.</li>
+    </ol>
+    <div class="tip"><b>Tip:</b> do not add the in-between shades along edges as colors of their own. Vector Free already treats them as a mix of the two colors they separate.</div>`],
+  review: ["Review Result", `<p>Check the result before exporting: flip between <b>Bitmap (B)</b> and <b>Vector (V)</b>, zoom with the mouse wheel, tick <b>Split</b> to compare side by side, and tick <b>Paths</b> (<kbd>P</kbd>) to see every outline and node.</p>
+    <h3>Improve Result</h3><p><b>Detail Level</b> and <b>Colors</b> trace again with new settings. <b>Current Palette (change)</b> opens the palette page.</p>
+    <h3>Advanced</h3><p><b>Remove Background</b> drops shapes, <b>Edit Result</b> fixes the segmentation by hand and <b>Hand-pick Settings</b> goes back to the questions.</p>
+    <h3>Quick fixes</h3>
+    <table>
+      <tr><th>You see</th><th>Try</th></tr>
+      <tr><td>Wavy straight edges</td><td>Trace again in <b>Clean Lines</b> mode.</td></tr>
+      <tr><td>Small specks or noise</td><td>A lower <b>Detail Level</b>, or <b>Edit Result</b> → Zap.</td></tr>
+      <tr><td>A color is missing</td><td><b>Custom Colors</b>, then add it with the eyedropper.</td></tr>
+      <tr><td>Thin lines broken apart</td><td><b>Edit Result</b> → Problem Finder, or a higher quality.</td></tr>
+      <tr><td>Unwanted background</td><td><b>Remove Background</b>.</td></tr>
+      <tr><td>Hairline gaps between shapes in another program</td><td>Export Options → <b>Stroking mode</b>.</td></tr>
+    </table>`],
+  editSeg: ["Edit Segmentation", `<p>Fix the colored regions by hand before the curves are fitted. Tools, with their keyboard shortcut:</p>
+    <ul>
+      <li><b>Undo (Z)</b>, <b>Redo (Y)</b>, <b>Revert (T)</b>: step through or discard your edits.</li>
+      <li><b>Pan (A)</b>: move the view. Hold <kbd>Shift</kbd> to pan with any tool.</li>
+      <li><b>Zap (D)</b>: drag to dissolve pixels into the surrounding regions; click to dissolve a whole region.</li>
+      <li><b>Fill (F)</b>: give a whole region the current color.</li>
+      <li><b>Pencil (X)</b>: paint pixels with the current color. The size slider sets the brush.</li>
+      <li><b>Color (C)</b>: click a region to make its color the current color. Clicking the color swatch cycles through the palette.</li>
+    </ul>
+    <h3>Problem Finder</h3><p>Marks pinch points where a thin shape is about to break in two; use ◀ ▶ to visit them and repair them with the Pencil.</p>
+    <div class="tip"><b>Tip:</b> the <b>Segments (S)</b> view shows the regions you are editing; switch to <b>Vector (V)</b> to see the effect.</div>`],
+  removeBg: ["Remove Background", `<ul>
+      <li><b>Erase (D)</b>: click shapes to remove them from the result; click again to restore them. Removed shapes show a red dotted outline and are not exported.</li>
+      <li>Tick <b>Erase all shapes of the clicked color</b> to remove a color everywhere at once, for example a white background showing through letters.</li>
+      <li><b>Pan (A)</b>, or hold <kbd>Shift</kbd>, to move the view.</li>
+    </ul>
+    <div class="tip"><b>Tip:</b> removed shapes are left out of the exported file, so those areas stay empty (transparent in formats that support it).</div>`],
+  advSegmentation: ["Image Segmentation", `<p>Segmentation splits the image into flat color regions; the outlines of those regions become the vector shapes.</p>
+    <h3>Complexity</h3><p>How many color segments the image is split into. Raise it if colors are merged together; lower it for a simpler result.</p>
+    <h3>Minimum Number of Pixels</h3><p>Regions smaller than this are merged into a neighbour. 0 lets Vector Free decide from the image size.</p>
+    <h3>Anti-Aliasing Artifact Rejection</h3><p>Removes the thin in-between strips anti-aliasing can leave along edges. <i>Aggressive</i> suits most artwork; <i>None</i> keeps every strip.</p>
+    <h3>Noise Filter</h3><p>Smooths away JPEG artifacts and noise before segmenting, at the cost of very fine detail.</p>
+    <h3>Auto-Update</h3><p>Segment again automatically after every change.</p>`],
+  advSmoothing: ["Path Smoothing", `<p>These settings control how the region outlines are turned into lines and curves.</p>
+    <h3>Smoothness</h3><p>How strongly the pixel staircase is smoothed before curves are fitted.</p>
+    <h3>Detect Sharp Corners</h3><p>Keeps corners crisp; turn it off for organic, rounded shapes.</p>
+    <h3>Anti-Aliasing Engine</h3><p>Uses the blended edge pixels to locate edges between pixels. Leave it on for anti-aliased artwork.</p>
     <h3>Number of Nodes</h3><p>Fewer nodes give simpler, smoother curves; more nodes follow the shapes more closely.</p>
-    <h3>Curve Types</h3><p>Lines only outputs polygons.</p>`],
-  export: ["Export Result", `<h3>Save As</h3><p>Pick the file type in the save dialog: SVG, EPS, PDF, AI, DXF or a bitmap format. Shortcut <kbd>Ctrl</kbd>+<kbd>S</kbd>.</p>
-    <h3>Open in Another Program</h3><p><b>Open</b> saves a temporary copy and opens it in the program Windows associates with that type. <b>Copy SVG</b> puts the vector on the clipboard.</p>
+    <h3>Curve Types</h3><p><i>Lines only</i> outputs polygons, for machines and programs that do not handle curves.</p>`],
+  export: ["Export Result", `<h3>Save As</h3><p>Pick the file type in the save dialog (<kbd>Ctrl</kbd>+<kbd>S</kbd>).</p>
+    <table>
+      <tr><th>Format</th><th>Use it for</th></tr>
+      <tr><td><b>SVG</b></td><td>Web pages, Inkscape, Illustrator, Figma and most cutting-machine software.</td></tr>
+      <tr><td><b>PDF</b>, <b>EPS</b></td><td>Print shops, Illustrator, CorelDRAW.</td></tr>
+      <tr><td><b>AI</b></td><td>Adobe Illustrator (Illustrator 3 format).</td></tr>
+      <tr><td><b>DXF</b></td><td>CAD/CAM, laser cutters, CNC and plotters.</td></tr>
+      <tr><td>PNG, GIF, JPEG, BMP, TIFF</td><td>A sharp bitmap at any size, from <b>Bitmap Export</b>.</td></tr>
+    </table>
+    <div class="tip"><b>Tip:</b> for CAD/CAM choose DXF mode <i>lines only</i> (R12): every program reads it.</div>
+    <h3>Open in Another Program</h3><p><b>Open</b> saves a temporary copy and opens it in the program Windows associates with that type. <b>Copy SVG</b> puts the vector on the clipboard, ready to paste into a design program.</p>
     <h3>Quick Save</h3><p>Saves next to the original image, with the same name and the type selected above.</p>
-    <h3>Bitmap Export</h3><p>Renders the vectors to PNG, GIF, JPEG, BMP or TIFF at any scale.</p>
-    <h3>Export Options</h3><p><b>Shape mode</b>: stacked shapes are easier to edit; cut-outs never overlap. <b>Stroking mode</b>: stroking hides hairline gaps some viewers draw between shapes. <b>DXF mode</b>: splines, or lines only for programs that cannot read splines.</p>
+    <h3>Export Options</h3>
+    <ul>
+      <li><b>Shape mode</b>: stacked shapes are easier to edit; cut-outs never overlap, which is better for cutting and embroidery.</li>
+      <li><b>Stroking mode</b>: stroking each shape with its own color hides the hairline gaps some viewers draw between shapes.</li>
+      <li><b>DXF mode</b>: splines, or lines only (more or fewer) for programs that cannot read splines.</li>
+    </ul>
     <h3>Save Settings</h3><p>Store the current settings under a name to reuse them from the Wizard Mode page.</p>`],
-  batchFiles: ["Batch Processing", `<p>Add the images to process with <b>Add Images</b>, a recent folder, or by dropping files onto the window. <b>Remove selected</b> and <b>Clear all</b> edit the list.</p>`],
-  batchRun: ["Batch Output", `<p>Choose whether each image is analysed automatically or the current settings are used for all of them, the output formats and where files are written, then press <b>Start</b>. <b>Stop</b> finishes the current image and stops.</p>`],
-  shortcuts: ["Keyboard Shortcuts", `<p><kbd>Ctrl</kbd>+<kbd>O</kbd> open · <kbd>Ctrl</kbd>+<kbd>V</kbd> paste · <kbd>Ctrl</kbd>+<kbd>S</kbd> save as</p>
-    <p><kbd>B</kbd> bitmap · <kbd>S</kbd> segments · <kbd>V</kbd> vector · <kbd>P</kbd> paths</p>
-    <p><kbd>0</kbd> fit · <kbd>1</kbd> actual size · <kbd>+</kbd>/<kbd>-</kbd> zoom · mouse wheel zooms</p>
-    <p>Editing pages: <kbd>Z</kbd> undo · <kbd>Y</kbd> redo · <kbd>T</kbd> revert · <kbd>A</kbd> pan · <kbd>D</kbd> zap / erase · <kbd>F</kbd> fill · <kbd>X</kbd> pencil · <kbd>C</kbd> color · hold <kbd>Shift</kbd> to pan</p>
-    <p><kbd>F1</kbd> help · <kbd>Enter</kbd> next page · <kbd>Backspace</kbd> previous page</p>`],
+  batchFiles: ["Batch Processing", `<p>Trace many images with the same settings.</p>
+    <ol>
+      <li>Add images with <b>Add Images</b>, from a recent folder, or by dropping files onto the window.</li>
+      <li><b>Remove selected</b> and <b>Clear all</b> edit the list.</li>
+      <li>Press <b>Next</b> to choose settings, formats and the output folder.</li>
+    </ol>`],
+  batchRun: ["Batch Output", `<h3>Settings</h3>
+    <ul>
+      <li><b>Fully automatic</b>: each image is analysed on its own.</li>
+      <li><b>Clean lines</b>: the same, with straight edges kept straight.</li>
+      <li><b>Current settings</b>: the settings of the image you have open, for every image.</li>
+    </ul>
+    <h3>Formats and Output Folder</h3><p>Tick one or more formats, and save next to each image or into one folder. Then press <b>Start</b>; <b>Stop</b> finishes the current image and stops.</p>
+    <div class="tip"><b>Tip:</b> for scripts and very large folders, the <a data-topic="cli">command-line tool</a> does the same without opening the app.</div>`],
+  cli: ["Command-Line Tool", `<p><code>vectorfree-cli.exe</code> traces images from a terminal or a script, without opening the app. It comes in the portable zip on the releases page, next to <code>VectorFree.exe</code>.</p>
+    <h3>Examples</h3>
+    <pre>vectorfree-cli logo.png
+vectorfree-cli logo.png -f svg,pdf --clean-lines
+vectorfree-cli C:\\images -o C:\\output -f svg,dxf</pre>
+    <p>Run <code>vectorfree-cli --help</code> for every option.</p>
+    <div class="tip">The installation guide (adding the tool to PATH so it works from any folder) is in <b>docs/CLI.md</b> on the project's GitHub page.</div>`],
+  shortcuts: ["Keyboard Shortcuts", `<table class="terms">
+      <tr><th colspan="2">Files</th></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Open an image</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Paste an image</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save As</td></tr>
+      <tr><th colspan="2">Views</th></tr>
+      <tr><td><kbd>B</kbd> <kbd>S</kbd> <kbd>V</kbd></td><td>Bitmap, Segments, Vector</td></tr>
+      <tr><td><kbd>P</kbd></td><td>Paths and nodes</td></tr>
+      <tr><td><kbd>0</kbd> <kbd>1</kbd></td><td>Fit, actual size</td></tr>
+      <tr><td><kbd>+</kbd> <kbd>-</kbd>, wheel</td><td>Zoom</td></tr>
+      <tr><th colspan="2">Editing pages</th></tr>
+      <tr><td><kbd>Z</kbd> <kbd>Y</kbd> <kbd>T</kbd></td><td>Undo, redo, revert</td></tr>
+      <tr><td><kbd>A</kbd> <kbd>D</kbd> <kbd>F</kbd> <kbd>X</kbd> <kbd>C</kbd></td><td>Pan, zap / erase, fill, pencil, color</td></tr>
+      <tr><td><kbd>Shift</kbd></td><td>Hold to pan with any tool</td></tr>
+      <tr><th colspan="2">Wizard</th></tr>
+      <tr><td><kbd>F1</kbd></td><td>Help</td></tr>
+      <tr><td><kbd>Enter</kbd> / <kbd>Backspace</kbd></td><td>Next / previous page</td></tr>
+    </table>`],
 };
-const HELP_ORDER = ["load", "wizardMode", "imageType", "quality", "colorMode", "palette", "review", "editSeg", "removeBg", "advSegmentation", "advSmoothing", "export", "batchFiles", "batchRun", "shortcuts"];
+const HELP_ORDER = ["load", "wizardMode", "imageType", "quality", "colorMode", "palette", "review", "editSeg", "removeBg", "advSegmentation", "advSmoothing", "export", "batchFiles", "batchRun", "cli", "shortcuts"];
 
 function showHelp(topic, record = true) {
   if (record && S.helpTopic && S.helpTopic !== topic) S.helpHistory.push(S.helpTopic);
@@ -1613,6 +1702,7 @@ function showHelp(topic, record = true) {
   }
   const [title, html] = HELP[topic] || HELP.load;
   body.innerHTML = `<h2>${title}</h2>${html}`;
+  for (const a of body.querySelectorAll("a[data-topic]")) a.addEventListener("click", () => showHelp(a.dataset.topic));
 }
 function toggleHelp() {
   const pane = $("helpPane");

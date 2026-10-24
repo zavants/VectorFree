@@ -2,6 +2,20 @@
 
 All notable changes to Vector Free are listed here. Versions follow [semantic versioning](https://semver.org); downloads are on the [releases page](https://github.com/zavants/VectorFree/releases).
 
+## [Unreleased]
+
+### Added
+- [Command-line guide](docs/CLI.md): installing `vectorfree-cli` so it works from any folder (one PowerShell block, a manual install or `cargo install`), every option, recipes, exit codes and troubleshooting.
+- Command-line options `-V` / `--version`; `--help` shows examples and a link to the guide.
+- Help topic *Command-Line Tool*.
+
+### Changed
+- The help pages (F1) are more complete: when to use each option, step-by-step instructions, tips, a table of quick fixes on Review Result and a guide to choosing the export format. Headings use the same font as the rest of the app instead of a serif font.
+
+### Fixed
+- The command-line tool no longer replaces the source image when the output has the same name and type (for example PNG output next to a PNG); it reports an error instead.
+- Update notes in the update dialog are shown as plain text instead of raw Markdown.
+
 ## [0.5.0] - 2026-10-24
 
 ### Added

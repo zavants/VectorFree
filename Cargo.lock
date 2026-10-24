@@ -4299,6 +4299,7 @@ dependencies = [
 name = "vectorfree-cli"
 version = "0.5.0"
 dependencies = [
+ "image",
  "vectorfree-engine",
 ]
 

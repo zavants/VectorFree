@@ -168,7 +168,7 @@ Press **Start**; **Stop** finishes the current image and stops.
 
 ## Command-line tool
 
-`vectorfree-cli.exe` traces images without opening the app — handy for scripts and large folders.
+`vectorfree-cli.exe` traces images without opening the app — handy for scripts and large folders. It is included in the portable zip; the **[command-line guide](docs/CLI.md)** explains how to install it so it works from any folder (one PowerShell block, or a manual install, or `cargo install` from source) and describes every option with recipes.
 
 ```bash
 vectorfree-cli logo.png -f svg,pdf
@@ -195,8 +195,9 @@ vectorfree-cli photo.jpg -t photo -q high -f svg
 | `--clean-lines` | Keep straight stretches of curved outlines as true lines (Clean Lines mode) |
 | `--tolerance`, `--smoothing`, `--corner`, `--min-area` | Fine-tuning |
 | `--denoise` / `--no-denoise` | Force the noise filter on or off |
+| `-V, --version` | Show the version |
 
-Folders are processed in alphabetical order; the exit code is non-zero if any image failed.
+Folders are processed in alphabetical order; the exit code is non-zero if any image failed. The tool never replaces a source image (for PNG output next to a PNG, use `--out`).
 
 ## Keyboard shortcuts
 
@@ -258,9 +259,11 @@ engine/            Tracing library (no UI)
   src/export/        SVG, PDF, EPS/AI, DXF and bitmap writers
   tests/             end-to-end tests
 cli/               Command-line front end
+  tests/             end-to-end tests of the command-line tool
 app/               Desktop app (Tauri)
   src-tauri/         Rust commands exposed to the UI
   ui/                HTML, CSS and JavaScript of the wizard
+docs/CLI.md        Command-line guide: installation, options, recipes
 docs/screenshots/  Images used in this README
 ```
 

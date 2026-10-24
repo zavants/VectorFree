@@ -5,10 +5,15 @@ use engine::export::{export_file, ExportOptions, Format, Layout};
 use engine::{CurveMode, ImageKind, Quality, Settings};
 use std::path::{Path, PathBuf};
 
-const USAGE: &str = "\
-Vector Free - bitmap to vector tracer
+const USAGE: &str = concat!(
+    "Vector Free ",
+    env!("CARGO_PKG_VERSION"),
+    " - bitmap to vector tracer
 
 USAGE: vectorfree-cli [OPTIONS] <IMAGE|FOLDER>...
+
+Traces each image (or every image in a folder) and writes the result next to
+it with the same name, or into the --out folder.
 
 OPTIONS:
   -o, --out <DIR>          Output folder (default: next to each input)
@@ -32,8 +37,18 @@ ADVANCED:
       --corner <DEG>       Corner angle threshold, 60..175 (default 120)
       --min-area <PX>      Merge regions smaller than this
       --denoise / --no-denoise
-  -h, --help
-";
+  -h, --help               Show this help
+  -V, --version            Show the version
+
+EXAMPLES:
+  vectorfree-cli logo.png
+  vectorfree-cli logo.png -f svg,pdf --clean-lines
+  vectorfree-cli C:\\images -o C:\\output -f svg,dxf
+  vectorfree-cli scan.jpg -t blended -q low --remove-bg -f eps
+
+Guide: https://github.com/zavants/VectorFree/blob/main/docs/CLI.md
+"
+);
 
 fn fail(msg: &str) -> ! {
     eprintln!("error: {msg}\n\n{USAGE}");
@@ -45,6 +60,15 @@ fn is_image(p: &Path) -> bool {
         p.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref(),
         Some("png" | "jpg" | "jpeg" | "gif" | "bmp" | "tif" | "tiff" | "ico" | "webp")
     )
+}
+
+/// Whether `target` is the very file `input`: writing it would replace the
+/// source image (e.g. PNG output next to a PNG).
+fn is_same_file(input: &Path, target: &Path) -> bool {
+    match (std::fs::canonicalize(input), std::fs::canonicalize(target)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
 }
 
 fn main() {
@@ -60,6 +84,10 @@ fn main() {
         match a.as_str() {
             "-h" | "--help" => {
                 print!("{USAGE}");
+                return;
+            }
+            "-V" | "--version" => {
+                println!("vectorfree-cli {}", env!("CARGO_PKG_VERSION"));
                 return;
             }
             "-o" | "--out" => out_dir = Some(PathBuf::from(val())),
@@ -141,22 +169,25 @@ fn main() {
     let mut failures = 0;
     for (i, input) in inputs.iter().enumerate() {
         let t0 = std::time::Instant::now();
-        let result = engine::load_image(input).and_then(|img| {
-            let mut s = settings.clone();
-            if auto_kind {
-                s.kind = engine::palette::suggest_kind(&img).0;
-            }
-            let vec = engine::vectorize(&engine::segment_image(&img, &s), &s);
-            let stem = input.file_stem().unwrap_or_default().to_string_lossy().to_string();
-            let dir = out_dir.clone().unwrap_or_else(|| input.parent().map(Path::to_path_buf).unwrap_or_default());
-            let mut written = Vec::new();
-            for f in &formats {
-                let target = dir.join(format!("{stem}.{}", f.ext()));
-                export_file(&vec, &target, *f, &opts)?;
-                written.push(target.display().to_string());
-            }
-            Ok((format!("{:?}, {}", s.kind, vec.shapes.len()), written))
-        });
+        let stem = input.file_stem().unwrap_or_default().to_string_lossy().to_string();
+        let dir = out_dir.clone().unwrap_or_else(|| input.parent().map(Path::to_path_buf).unwrap_or_default());
+        let targets: Vec<(Format, PathBuf)> = formats.iter().map(|f| (*f, dir.join(format!("{stem}.{}", f.ext())))).collect();
+        let result = match targets.iter().find(|(_, t)| is_same_file(input, t)) {
+            Some((_, t)) => Err(format!("{} would overwrite the source image; use --out to write elsewhere", t.display())),
+            None => engine::load_image(input).and_then(|img| {
+                let mut s = settings.clone();
+                if auto_kind {
+                    s.kind = engine::palette::suggest_kind(&img).0;
+                }
+                let vec = engine::vectorize(&engine::segment_image(&img, &s), &s);
+                let mut written = Vec::new();
+                for (f, target) in &targets {
+                    export_file(&vec, target, *f, &opts)?;
+                    written.push(target.display().to_string());
+                }
+                Ok((format!("{:?}, {}", s.kind, vec.shapes.len()), written))
+            }),
+        };
         match result {
             Ok((n, files)) => println!(
                 "[{}/{}] {} -> {} colors, {:.2}s: {}",
